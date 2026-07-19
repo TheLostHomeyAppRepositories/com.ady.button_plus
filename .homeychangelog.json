@@ -316,5 +316,8 @@
 	},
 	"0.7.39": {
 		"en": "Add MQTT custom topic fields back into the new UI."
+	},
+	"0.7.40": {
+		"en": "Fixes for a crash report."
 	}
 }
