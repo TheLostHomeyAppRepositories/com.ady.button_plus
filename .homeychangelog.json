@@ -313,5 +313,8 @@
 	},
 	"0.7.38": {
 		"en": "Add instructions to main configuration page."
+	},
+	"0.7.39": {
+		"en": "Add MQTT custom topic fields back into the new UI."
 	}
 }
