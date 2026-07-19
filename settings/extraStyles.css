@@ -84,8 +84,28 @@
 }
 
 .main {
-    margin-top: 65px;
+	margin-top: 54px;
     /* Add a top margin to avoid content overlay */
+}
+
+#panelConfig,
+#displayConfig,
+#brokerConfig,
+#importExport {
+    padding-top: 4px !important;
+}
+
+#panelConfig > .homey-form-group,
+#displayConfig > .homey-form-group,
+#brokerConfig > .homey-form-group,
+#importExport > .homey-form-group {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+.settings-top-form-group {
+	margin-top: -20px !important;
+	padding-top: 0 !important;
 }
 
 .settings-main-note {
@@ -114,8 +134,8 @@
 }
 
 #settings > .homey-form-fieldset:first-of-type {
-	margin-top: -20px;
-	padding-top: 0;
+	margin-top: 0;
+	padding-top: 4px;
 }
 
 #lastSentLog #sentip,
@@ -131,7 +151,7 @@
 }
 
 #diagnosticLog {
-	padding-top: 28px;
+	padding-top: 2px;
 }
 
 details {

@@ -1687,7 +1687,7 @@ class MyApp extends Homey.App
 						buttons.topics.push(
 							{
 								brokerid: customMQTTTopic.brokerId !== 'Default' ? customMQTTTopic.brokerId : this.homey.settings.get('defaultBroker'),
-								eventtype: customMQTTTopic.eventType,
+								eventtype: customMQTTTopic.type ?? customMQTTTopic.eventType,
 								topic: customMQTTTopic.topic,
 								payload: customMQTTTopic.payload,
 							},

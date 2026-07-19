@@ -1252,14 +1252,18 @@ const DISPLAY_FONT_SIZE_LOOKUP = { 1: 18, 2: 35, 3: 45, 4: 66, 5: 100 };
 		function adjustMainTopOffset()
 		{
 			const fixedTopElement = document.querySelector('.fixedTop');
+			const separatorElement = fixedTopElement ? fixedTopElement.querySelector('.hr-separator') : null;
 			const mainElement = document.querySelector('.main');
 			if (!fixedTopElement || !mainElement)
 			{
 				return;
 			}
 
-			const offset = Math.ceil(fixedTopElement.getBoundingClientRect().height) + 12;
-			mainElement.style.marginTop = `${Math.max(offset, 65)}px`;
+			const referenceBottom = separatorElement
+				? separatorElement.getBoundingClientRect().bottom
+				: fixedTopElement.getBoundingClientRect().bottom;
+			const offset = Math.ceil(referenceBottom);
+			mainElement.style.marginTop = `${offset}px`;
 		}
 
 		function escapeHtml(value)
@@ -1799,8 +1803,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					}
 				}
 
-				storeCustomMQTTItems(side, ButtonPanelConfiguration);
-				storeCustomMQTTItems(side, ButtonPanelConfiguration);
+				storeCustomMQTTItems(side, page, ButtonPanelConfiguration);
 
 				// Copy the values from the controls to the buttonConfiguration
 				ButtonPanelConfiguration[`${side}TopText`] = topTextElement.value;
@@ -4160,6 +4163,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				return;
 			}
 
+			restoreButtonFieldPopupCustomMQTTSection();
 			buttonFieldPopupOverlayElement.classList.remove('visible');
 			buttonFieldPopupOverlayElement.setAttribute('aria-hidden', 'true');
 			buttonFieldPopupBindings = [];
@@ -4189,6 +4193,67 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			{
 				popupCapabilityElement.value = wantedValue;
 			}
+		}
+
+		function updateButtonFieldPopupCapabilityState(popupElementsBySuffix)
+		{
+			if (!popupElementsBySuffix || !popupElementsBySuffix.Device || !popupElementsBySuffix.Capability)
+			{
+				return;
+			}
+
+			const deviceValue = popupElementsBySuffix.Device.value;
+			const capabilityElement = popupElementsBySuffix.Capability;
+			const capabilityRowElement = capabilityElement.closest('.button-field-popup-field');
+			const capabilityLabelElement = capabilityRowElement ? capabilityRowElement.querySelector('.button-field-popup-label') : null;
+
+			const hideCapability = (deviceValue === 'none' || deviceValue === 'customMQTT');
+			if (capabilityRowElement)
+			{
+				capabilityRowElement.style.display = hideCapability ? 'none' : '';
+			}
+
+			if (capabilityLabelElement)
+			{
+				const capabilityLabelText = (deviceValue === '_variable_')
+					? Homey.__('settings.variable')
+					: Homey.__('settings.capability');
+				const capabilityTooltipText = getLocalizedTooltipText('settings.capabilityExplanation');
+				capabilityLabelElement.innerHTML = '';
+				appendPopupLabelContent(capabilityLabelElement, capabilityLabelText, capabilityTooltipText);
+			}
+		}
+
+		function restoreButtonFieldPopupCustomMQTTSection()
+		{
+			if (!buttonFieldPopupContext || !buttonFieldPopupContext.customMQTTSectionElement || !buttonFieldPopupContext.customMQTTSectionPlaceholder)
+			{
+				return;
+			}
+
+			buttonFieldPopupContext.customMQTTSectionPlaceholder.replaceWith(buttonFieldPopupContext.customMQTTSectionElement);
+			buttonFieldPopupContext.customMQTTSectionElement = null;
+			buttonFieldPopupContext.customMQTTSectionPlaceholder = null;
+		}
+
+		function appendButtonFieldPopupCustomMQTTSection(side, page)
+		{
+			if (!buttonFieldPopupBodyElement || !buttonFieldPopupContext)
+			{
+				return;
+			}
+
+			const sourceSectionElement = document.getElementById(`${side}${page}CustomMQTTDiv`);
+			if (!sourceSectionElement || sourceSectionElement.parentNode === buttonFieldPopupBodyElement)
+			{
+				return;
+			}
+
+			const placeholderElement = document.createComment(`${side}${page}CustomMQTTDiv`);
+			sourceSectionElement.parentNode.insertBefore(placeholderElement, sourceSectionElement);
+			buttonFieldPopupBodyElement.appendChild(sourceSectionElement);
+			buttonFieldPopupContext.customMQTTSectionElement = sourceSectionElement;
+			buttonFieldPopupContext.customMQTTSectionPlaceholder = placeholderElement;
 		}
 
 		function getPopupFieldTooltipText(sourceLabelElement)
@@ -4280,6 +4345,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				const page = buttonFieldPopupContext.page;
 				const deviceValue = buttonFieldPopupContext.popupElementsBySuffix.Device.value;
 				const capabilityValue = buttonFieldPopupContext.popupElementsBySuffix.Capability.value;
+				const shouldApplyCapability = (deviceValue !== 'none' && deviceValue !== 'customMQTT');
 
 				const sourceDeviceElement = document.getElementById(`${side}${page}Device`);
 				const sourceCapabilityElement = document.getElementById(`${side}${page}Capability`);
@@ -4291,7 +4357,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					sourceDeviceElement.dispatchEvent(new Event('change', { bubbles: true }));
 				}
 
-				if (sourceCapabilityElement)
+				if (sourceCapabilityElement && shouldApplyCapability)
 				{
 					const applyCapabilityValue = function (attempt = 0)
 					{
@@ -4340,6 +4406,12 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 			if (buttonFieldPopupContext)
 			{
+				const buttonPanelConfiguration = localButtonConfigurations[currentButtonConfigurationNo];
+				if (Array.isArray(buttonPanelConfiguration) && buttonPanelConfiguration[buttonFieldPopupContext.page])
+				{
+					storeCustomMQTTItems(buttonFieldPopupContext.side, buttonFieldPopupContext.page, buttonPanelConfiguration[buttonFieldPopupContext.page]);
+				}
+
 				renderInlineButtonPagePreview(buttonFieldPopupContext.page);
 				if (buttonPagePopupOverlayElement && buttonPagePopupOverlayElement.classList.contains('visible'))
 				{
@@ -4488,6 +4560,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 			if (popupElementsBySuffix.Device && popupElementsBySuffix.Capability)
 			{
+				appendButtonFieldPopupCustomMQTTSection(side, page);
+
 				if (popupDeviceIndicatorElement)
 				{
 					updatePopupDeviceIndicator(popupElementsBySuffix.Device, popupDeviceIndicatorElement);
@@ -4496,6 +4570,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				{
 					updatePopupCapabilityIndicator(popupElementsBySuffix.Capability, popupCapabilityIndicatorElement);
 				}
+				updateButtonFieldPopupCapabilityState(popupElementsBySuffix);
 
 				popupElementsBySuffix.Device.addEventListener('change', function ()
 				{
@@ -4512,6 +4587,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					}
 
 					syncButtonFieldPopupCapabilityOptions(side, page, popupElementsBySuffix.Capability);
+					updateButtonFieldPopupCapabilityState(popupElementsBySuffix);
 					if (popupCapabilityIndicatorElement)
 					{
 						updatePopupCapabilityIndicator(popupElementsBySuffix.Capability, popupCapabilityIndicatorElement);
@@ -4520,6 +4596,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					setTimeout(() =>
 					{
 						syncButtonFieldPopupCapabilityOptions(side, page, popupElementsBySuffix.Capability);
+						updateButtonFieldPopupCapabilityState(popupElementsBySuffix);
 						if (popupCapabilityIndicatorElement)
 						{
 							updatePopupCapabilityIndicator(popupElementsBySuffix.Capability, popupCapabilityIndicatorElement);
@@ -4528,6 +4605,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					setTimeout(() =>
 					{
 						syncButtonFieldPopupCapabilityOptions(side, page, popupElementsBySuffix.Capability);
+						updateButtonFieldPopupCapabilityState(popupElementsBySuffix);
 						if (popupCapabilityIndicatorElement)
 						{
 							updatePopupCapabilityIndicator(popupElementsBySuffix.Capability, popupCapabilityIndicatorElement);
@@ -4652,6 +4730,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				document.activeElement.blur();
 			}
 
+			restoreDisplayFieldPopupCustomMQTTSection();
 			displayFieldPopupOverlayElement.classList.remove('visible');
 			displayFieldPopupOverlayElement.setAttribute('aria-hidden', 'true');
 			displayFieldPopupBindings = [];
@@ -4710,6 +4789,38 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				capabilityLabelElement.innerHTML = '';
 				appendPopupLabelContent(capabilityLabelElement, capabilityLabelText, capabilityTooltipText);
 			}
+		}
+
+		function restoreDisplayFieldPopupCustomMQTTSection()
+		{
+			if (!displayFieldPopupContext || !displayFieldPopupContext.customMQTTSectionElement || !displayFieldPopupContext.customMQTTSectionPlaceholder)
+			{
+				return;
+			}
+
+			displayFieldPopupContext.customMQTTSectionPlaceholder.replaceWith(displayFieldPopupContext.customMQTTSectionElement);
+			displayFieldPopupContext.customMQTTSectionElement = null;
+			displayFieldPopupContext.customMQTTSectionPlaceholder = null;
+		}
+
+		function appendDisplayFieldPopupCustomMQTTSection(itemNo)
+		{
+			if (!displayFieldPopupBodyElement || !displayFieldPopupContext)
+			{
+				return;
+			}
+
+			const sourceSectionElement = document.getElementById(`display${itemNo}CustomMQTTTopicDiv`);
+			if (!sourceSectionElement || sourceSectionElement.parentNode === displayFieldPopupBodyElement)
+			{
+				return;
+			}
+
+			const placeholderElement = document.createComment(`display${itemNo}CustomMQTTTopicDiv`);
+			sourceSectionElement.parentNode.insertBefore(placeholderElement, sourceSectionElement);
+			displayFieldPopupBodyElement.appendChild(sourceSectionElement);
+			displayFieldPopupContext.customMQTTSectionElement = sourceSectionElement;
+			displayFieldPopupContext.customMQTTSectionPlaceholder = placeholderElement;
 		}
 
 		function saveDisplayFieldPopup()
@@ -4795,6 +4906,16 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					pendingDispatch.sourceElement.dispatchEvent(new Event('input', { bubbles: true }));
 				}
 				pendingDispatch.sourceElement.dispatchEvent(new Event('change', { bubbles: true }));
+			}
+
+			if (displayFieldPopupContext && Number.isInteger(displayFieldPopupContext.itemNo))
+			{
+				const displayConfiguration = localDisplayConfigurations[currentDisplayConfigurationNo];
+				const displayItem = displayConfiguration && Array.isArray(displayConfiguration.items) ? displayConfiguration.items[displayFieldPopupContext.itemNo] : null;
+				if (displayItem)
+				{
+					storeDisplayCustomMQTTItems(displayFieldPopupContext.itemNo, displayItem.customMQTTTopics);
+				}
 			}
 
 			renderDisplayInlineSimulator();
@@ -4909,6 +5030,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			displayFieldPopupContext = { itemNo, popupElementsBySuffix };
 			if (popupElementsBySuffix.Device && popupElementsBySuffix.Capability)
 			{
+				appendDisplayFieldPopupCustomMQTTSection(itemNo);
+
 				popupElementsBySuffix.Device.addEventListener('change', function ()
 				{
 					const sourceDeviceElement = document.getElementById(`display${itemNo}Device`);
@@ -6489,7 +6612,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 				// Show the custom MQTT section
 				document.getElementById(`${side}${page}CustomMQTTDiv`).style.display = itemDisplyType;
-				drawCustomMQTTTopics(side, localButtonConfigurations[currentButtonConfigurationNo]);
+				drawCustomMQTTTopics(side, page, localButtonConfigurations[currentButtonConfigurationNo][page]);
 				hidePopupManagedFieldsForSection(side, page);
 				updateButtonCapabilityIndicator(side, page);
 				return;
@@ -7048,7 +7171,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					topic: "",
 					payload: "",
 					brokerId: 'Default',
-					enable: true,
+					enabled: true,
 				};
 
 				// make sure the customMQTTTopics is an array
@@ -7063,13 +7186,43 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			}
 		};
 
+		function newMQTTTopic(side, page)
+		{
+			var buttonPanelConfiguration = localButtonConfigurations[currentButtonConfigurationNo];
+			if (!Array.isArray(buttonPanelConfiguration) || !buttonPanelConfiguration[page])
+			{
+				return;
+			}
+
+			const pageConfiguration = buttonPanelConfiguration[page];
+			const topicsKey = `${side}CustomMQTTTopics`;
+			if (!Array.isArray(pageConfiguration[topicsKey]))
+			{
+				pageConfiguration[topicsKey] = [];
+			}
+
+			storeCustomMQTTItems(side, page, pageConfiguration);
+
+			pageConfiguration[topicsKey].push({
+				id: '',
+				type: 0,
+				topic: '',
+				payload: '',
+				brokerId: 'Default',
+				enabled: true,
+			});
+
+			drawCustomMQTTTopics(side, page, pageConfiguration);
+		}
+
 		/// Custom MQTT code
 		function drawDisplayCustomMQTTTopics(Item, Topics)
 		{
-			if (!Topics || Topics.length === 0) return;
+			if (!Array.isArray(Topics)) return;
 
 			document.getElementById(`display${Item}CustomMQTTTopicsSection`).innerHTML = "";
 			customDisplayMQTTItemsElements = [];
+			if (Topics.length === 0) return;
 
 			for (var itemNo = 0; itemNo < Topics.length; itemNo++)
 			{
@@ -7100,7 +7253,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				id: Homey.__("settings.MQTTId"),
 				idExplanation: Homey.__("settings.MQTTIdExplanation"),
 				type: Homey.__("settings.type"),
-				typeExplanation: Homey.__("settings.typeExplanation"),
+				typeExplanation: Homey.__("settings.displayTypeExplanation"),
 				topic: Homey.__("settings.topic"),
 				topicExplanation: Homey.__("settings.topicExplanation"),
 				payload: Homey.__("settings.payload"),
@@ -8475,15 +8628,21 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 		/// Custom MQTT code
 		function drawCustomMQTTTopics(side, page, buttonPanelConfiguration)
 		{
-			document.getElementById(`${side}${page}CustomMQTTTopicsSection`).innerHTML = "";
+			const customMQTTTopicsSectionElement = document.getElementById(`${side}${page}CustomMQTTTopicsSection`);
+			if (!customMQTTTopicsSectionElement || !buttonPanelConfiguration)
+			{
+				return;
+			}
+
+			customMQTTTopicsSectionElement.innerHTML = "";
 			customMQTTItemsElements = [];
 
-			const customMQTTTopics = buttonPanelConfiguration[`${side}CustomMQTTTopics`];
+			const customMQTTTopics = Array.isArray(buttonPanelConfiguration[`${side}CustomMQTTTopics`]) ? buttonPanelConfiguration[`${side}CustomMQTTTopics`] : [];
 
 			for (var itemNo = 0; itemNo < customMQTTTopics.length; itemNo++)
 			{
 				const topic = customMQTTTopics[itemNo];
-				insertCustomMQTTTopicSection(topic, itemNo, side);
+				insertCustomMQTTTopicSection(topic, itemNo, side, page);
 			}
 
 			// Set the value for the brokerID in each custom MQTT topics section
@@ -8501,7 +8660,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			})
 		}
 
-		function insertCustomMQTTTopicSection(Topic, ItemNo, Side)
+		function insertCustomMQTTTopicSection(Topic, ItemNo, Side, Page)
 		{
 			const ctrlLabels = {
 				brokerId: Homey.__("settings.brokerId"),
@@ -8522,64 +8681,64 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			const itemLegend = Homey.__("settings.customMQTTItemlegend", { itemNo: ItemNo + 1 });
 			const enableOption = Topic.enabled ? "checked" : "";
 
-			var section = document.getElementById(`${Side}CustomMQTTTopicsSection`).innerHTML;
+			var section = document.getElementById(`${Side}${Page}CustomMQTTTopicsSection`).innerHTML;
 			section = section +
 				`<div class="horizontalcontainer">
 					<div class="horizontalgroup">
 						<legend class="homey-subtitle">${itemLegend}</legend>
 
-						<label class="homey-form-label" for="${Side}CustomMQTT${ItemNo}Id">${ctrlLabels.id}
+						<label class="homey-form-label" for="${Side}${Page}CustomMQTT${ItemNo}Id">${ctrlLabels.id}
 							<div class="tooltip" onmouseover="position_tooltip"><i class="fi fi-rr-info"></i>
 								<span class="tooltiptext">${ctrlLabels.idExplanation}</span>
 							</div>
 						</label>
-						<input class="homey-form-input" id="${Side}CustomMQTT${ItemNo}Id" type="text" value="${Topic.id}"/>
+						<input class="homey-form-input" id="${Side}${Page}CustomMQTT${ItemNo}Id" type="text" value="${Topic.id}"/>
 
-						<label class="homey-form-label" for="${Side}CustomMQTT${ItemNo}Type">${ctrlLabels.type}
+						<label class="homey-form-label" for="${Side}${Page}CustomMQTT${ItemNo}Type">${ctrlLabels.type}
 							<div class="tooltip" onmouseover="position_tooltip"><i class="fi fi-rr-info"></i>
 								<span class="tooltiptext">${ctrlLabels.typeExplanation}</span>
 							</div>
 						</label>
-						<select class="homey-form-select" id="${Side}CustomMQTT${ItemNo}Type">
+						<select class="homey-form-select" id="${Side}${Page}CustomMQTT${ItemNo}Type">
 							<option value=0>${ctrlLabels.click}</option>
 							<option value=1>${ctrlLabels.longPress}</option>
 							<option value=14>${ctrlLabels.led}</option>
 						</select><br>
 
-						<label class="homey-form-label" for="${Side}CustomMQTT${ItemNo}topic">${ctrlLabels.topic}
+						<label class="homey-form-label" for="${Side}${Page}CustomMQTT${ItemNo}topic">${ctrlLabels.topic}
 							<div class="tooltip" onmouseover="position_tooltip"><i class="fi fi-rr-info"></i>
 								<span class="tooltiptext">${ctrlLabels.topicExplanation}</span>
 							</div>
 						</label>
-						<input class="homey-form-input" id="${Side}CustomMQTT${ItemNo}topic" type="text" value="${Topic.topic}" />
+						<input class="homey-form-input" id="${Side}${Page}CustomMQTT${ItemNo}topic" type="text" value="${Topic.topic}" />
 
-						<label class="homey-form-label" for="${Side}CustomMQTT${ItemNo}payload">${ctrlLabels.payload}
+						<label class="homey-form-label" for="${Side}${Page}CustomMQTT${ItemNo}payload">${ctrlLabels.payload}
 							<div class="tooltip" onmouseover="position_tooltip"><i class="fi fi-rr-info"></i>
 								<span class="tooltiptext">${ctrlLabels.payloadExplanation}</span>
 							</div>
 						</label>
-						<input class="homey-form-input" id="${Side}CustomMQTT${ItemNo}payload" type="text" value="${Topic.payload}" />
+						<input class="homey-form-input" id="${Side}${Page}CustomMQTT${ItemNo}payload" type="text" value="${Topic.payload}" />
 
-						<label class="homey-form-label" for="${Side}CustomMQTT${ItemNo}BrokerId">${ctrlLabels.brokerId}
+						<label class="homey-form-label" for="${Side}${Page}CustomMQTT${ItemNo}BrokerId">${ctrlLabels.brokerId}
 							<div class="tooltip" onmouseover="position_tooltip"><i class="fi fi-rr-info"></i>
 								<span class="tooltiptext">${ctrlLabels.brokerIdExplanation}</span>
 							</div>
 						</label>
-						<select class="homey-form-select" id="${Side}CustomMQTT${ItemNo}BrokerId">
+						<select class="homey-form-select" id="${Side}${Page}CustomMQTT${ItemNo}BrokerId">
 						</select><br>
 
 						<label class="homey-form-checkbox">
-							<input class="homey-form-checkbox-input" id="${Side}CustomMQTT${ItemNo}Enabled" type="checkbox" ${enableOption}/>
+							<input class="homey-form-checkbox-input" id="${Side}${Page}CustomMQTT${ItemNo}Enabled" type="checkbox" ${enableOption}/>
 							<span class="homey-form-checkbox-checkmark"></span>
 							<span class="homey-form-checkbox-text">${ctrlLabels.enabled}</span>
 						</label>
 
-						<p><button class="homey-button-secondary-shadow" id="${Side}DeleteItem${ItemNo}" onClick="deleteCustomMQTTItem(${ItemNo}, '${Side}')" style="font-size: 30px;"><i class="fi fi-rr-trash"></i> </button></p>
+						<p><button class="homey-button-secondary-shadow" id="${Side}${Page}DeleteItem${ItemNo}" onClick="deleteCustomMQTTItem(${ItemNo}, '${Side}', ${Page})" style="font-size: 30px;"><i class="fi fi-rr-trash"></i> </button></p>
 					</div>
 				</div>`;
 
-			document.getElementById(`${Side}CustomMQTTTopicsSection`).innerHTML = section;
-			customMQTTItemsElements.push(document.getElementById(`${Side}CustomMQTT${ItemNo}BrokerId`));
+			document.getElementById(`${Side}${Page}CustomMQTTTopicsSection`).innerHTML = section;
+			customMQTTItemsElements.push(document.getElementById(`${Side}${Page}CustomMQTT${ItemNo}BrokerId`));
 
 			// Add the brokers to the broker list
 			var option = document.createElement("option");
@@ -8598,17 +8757,26 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 		}
 
 		// Delete the specified custom item from the button panel configuration and redraw the list
-		function deleteCustomMQTTItem(itemNo, side)
+		function deleteCustomMQTTItem(itemNo, side, page)
 		{
 			var ButtonPanelConfiguration = localButtonConfigurations[currentButtonConfigurationNo];
-			const customMQTTTopics = ButtonPanelConfiguration[`${side}CustomMQTTTopics`];
+			if (!Array.isArray(ButtonPanelConfiguration) || !ButtonPanelConfiguration[page])
+			{
+				return;
+			}
+
+			const customMQTTTopics = ButtonPanelConfiguration[page][`${side}CustomMQTTTopics`];
+			if (!Array.isArray(customMQTTTopics))
+			{
+				return;
+			}
 
 			customMQTTTopics.splice(itemNo, 1);
-			drawCustomMQTTTopics(side, ButtonPanelConfiguration);
+			drawCustomMQTTTopics(side, page, ButtonPanelConfiguration[page]);
 		}
 
 		//  Copy the contents of the specified custom item controls to the button panel configuration
-		function storeCustomMQTTItem(side, buttonPanelConfiguration, itemNo)
+		function storeCustomMQTTItem(side, page, buttonPanelConfiguration, itemNo)
 		{
 			// Get the custom MQTT topics array
 			const customMQTTTopics = buttonPanelConfiguration[`${side}CustomMQTTTopics`];
@@ -8625,20 +8793,27 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			}
 
 			// Update the item
-			item.id = document.getElementById(`${side}CustomMQTT${itemNo}Id`).value;
-			item.type = document.getElementById(`${side}CustomMQTT${itemNo}Type`).value;
-			item.topic = document.getElementById(`${side}CustomMQTT${itemNo}topic`).value;
-			item.payload = document.getElementById(`${side}CustomMQTT${itemNo}payload`).value;
-			item.brokerId = document.getElementById(`${side}CustomMQTT${itemNo}BrokerId`).value;
-			item.enabled = document.getElementById(`${side}CustomMQTT${itemNo}Enabled`).checked;
+			item.id = document.getElementById(`${side}${page}CustomMQTT${itemNo}Id`).value;
+			item.type = document.getElementById(`${side}${page}CustomMQTT${itemNo}Type`).value;
+			item.topic = document.getElementById(`${side}${page}CustomMQTT${itemNo}topic`).value;
+			item.payload = document.getElementById(`${side}${page}CustomMQTT${itemNo}payload`).value;
+			item.brokerId = document.getElementById(`${side}${page}CustomMQTT${itemNo}BrokerId`).value;
+			item.enabled = document.getElementById(`${side}${page}CustomMQTT${itemNo}Enabled`).checked;
 		}
 
 		// Copy the contents of the all the custom items controls to the button panel configuration
-		function storeCustomMQTTItems(side, buttonPanelConfiguration)
+		function storeCustomMQTTItems(side, page, buttonPanelConfiguration)
 		{
-			for (var itemNo = 0; itemNo < customMQTTItemsElements.length; itemNo++)
+			const topicsSectionElement = document.getElementById(`${side}${page}CustomMQTTTopicsSection`);
+			if (!topicsSectionElement)
 			{
-				storeCustomMQTTItem(side, buttonPanelConfiguration, itemNo);
+				return;
+			}
+
+			const topicBrokerElements = topicsSectionElement.querySelectorAll(`select[id^="${side}${page}CustomMQTT"][id$="BrokerId"]`);
+			for (var itemNo = 0; itemNo < topicBrokerElements.length; itemNo++)
+			{
+				storeCustomMQTTItem(side, page, buttonPanelConfiguration, itemNo);
 			}
 		}
 
@@ -9368,7 +9543,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
                                     <div id="${side}${page}CustomMQTTDiv">
                                         <br>
                                             <div id="${side}${page}CustomMQTTTopicsSection"></div>
-                                            <p><button class="homey-button-secondary-shadow" id="new${side}${page}CustomMQTTItem"><span>${ctrlLabels.newCustomMQTTItem}</span></button></p>
+											<p><button class="homey-button-secondary-shadow" id="new${side}${page}CustomMQTTItem" onClick="newMQTTTopic('${side}', ${page}); return false;"><span>${ctrlLabels.newCustomMQTTItem}</span></button></p>
                                     </div>
                                 </span>
 
