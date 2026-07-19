@@ -2583,6 +2583,11 @@ class PanelDevice extends Device
 
 	async checkStateChange(deviceId, capability, value)
 	{
+		if (!this.buttonValues)
+		{
+			this.buttonValues = new Map();
+		}
+
 		// check the configuration to see if this capability is being monitored by one of the buttons
 		if (this.hasCapability('configuration_button.connector0'))
 		{
