@@ -155,6 +155,39 @@ const DISPLAY_FONT_SIZE_LOOKUP = { 1: 18, 2: 35, 3: 45, 4: 66, 5: 100 };
 			return selectedBroker || 'homey';
 		}
 
+		function getBrokerSelectValue(selectElement, previousValue, fallbackValue = 'Default')
+		{
+			const selectedBroker = selectElement && typeof selectElement.value === 'string' ? selectElement.value.trim() : '';
+			if (selectedBroker)
+			{
+				return selectedBroker;
+			}
+
+			const previousBroker = typeof previousValue === 'string' ? previousValue.trim() : '';
+			return previousBroker || fallbackValue;
+		}
+
+		function setBrokerSelectValue(selectElement, brokerId, fallbackValue = 'Default')
+		{
+			if (!selectElement)
+			{
+				return;
+			}
+
+			const selectedBroker = typeof brokerId === 'string' && brokerId.trim() ? brokerId.trim() : fallbackValue;
+			selectElement.value = selectedBroker;
+			if (selectElement.value === selectedBroker)
+			{
+				return;
+			}
+
+			const option = document.createElement('option');
+			option.value = selectedBroker;
+			option.text = selectedBroker;
+			selectElement.add(option);
+			selectElement.value = selectedBroker;
+		}
+
 		function syncBrokerSettingsToLocalWithoutValidation()
 		{
 			if (!Array.isArray(localBrokerItems))
@@ -260,7 +293,7 @@ const DISPLAY_FONT_SIZE_LOOKUP = { 1: 18, 2: 35, 3: 45, 4: 66, 5: 100 };
 							pageConfig[`${side}CapabilityName`] = capabilityElement.options[capabilityElement.selectedIndex].text;
 						}
 					}
-					if (brokerIdElement) pageConfig[`${side}BrokerId`] = brokerIdElement.value;
+					if (brokerIdElement) pageConfig[`${side}BrokerId`] = getBrokerSelectValue(brokerIdElement, pageConfig[`${side}BrokerId`]);
 					if (dimChangeElement) pageConfig[`${side}DimChange`] = dimChangeElement.value;
 					if (frontLEDOnColorElement) pageConfig[`${side}FrontLEDOnColor`] = frontLEDOnColorElement.value;
 					if (wallLEDOnColorElement) pageConfig[`${side}WallLEDOnColor`] = wallLEDOnColorElement.value;
@@ -1839,7 +1872,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				// Remove ' (Missing)' from the capability name
 				ButtonPanelConfiguration[`${side}CapabilityName`] = ButtonPanelConfiguration[`${side}CapabilityName`].replace(/ \(Missing\)/g, '');
 
-				ButtonPanelConfiguration[`${side}BrokerId`] = brokerIdElement.value;
+				ButtonPanelConfiguration[`${side}BrokerId`] = getBrokerSelectValue(brokerIdElement, ButtonPanelConfiguration[`${side}BrokerId`]);
 				ButtonPanelConfiguration[`${side}DimChange`] = dimChangeElement.value;
 				ButtonPanelConfiguration[`${side}FrontLEDOnColor`] = frontLEDOnColorElement.value;
 				ButtonPanelConfiguration[`${side}WallLEDOnColor`] = wallLEDOnColorElement.value;
@@ -6844,7 +6877,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				document.getElementById(`${side}${page}OffText`).value = "";
 				document.getElementById(`${side}${page}Device`).value = "";
 				document.getElementById(`${side}${page}Capability`).value = "";
-				document.getElementById(`${side}${page}BrokerId`).value = 'Default';
+				setBrokerSelectValue(document.getElementById(`${side}${page}BrokerId`), 'Default');
 				document.getElementById(`${side}${page}DimChange`).value = "+10";
 				document.getElementById(`${side}${page}FrontLEDOnColor`).value = "#ff0000";
 				document.getElementById(`${side}${page}WallLEDOnColor`).value = "#ff0000";
@@ -6889,7 +6922,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					}
 				}
 
-				document.getElementById(`${side}${page}BrokerId`).value = ButtonPanelConfiguration[`${side}BrokerId`];
+				setBrokerSelectValue(document.getElementById(`${side}${page}BrokerId`), ButtonPanelConfiguration[`${side}BrokerId`]);
 				document.getElementById(`${side}${page}DimChange`).value = ButtonPanelConfiguration[`${side}DimChange`];
 				document.getElementById(`${side}${page}FrontLEDOnColor`).value = ButtonPanelConfiguration[`${side}FrontLEDOnColor`];
 				document.getElementById(`${side}${page}WallLEDOnColor`).value = ButtonPanelConfiguration[`${side}WallLEDOnColor`];
@@ -7133,10 +7166,10 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				}
 
 				const item = displayConfiguration.items[itemNo];
-				document.getElementById(`display${itemNo}BrokerId`).value = item.brokerId;
+				setBrokerSelectValue(document.getElementById(`display${itemNo}BrokerId`), item.brokerId);
 
 				document.getElementById(`display${itemNo}FontSize`).value = item.fontSize;
-				document.getElementById(`display${itemNo}BrokerId`).value = item.brokerId;
+				setBrokerSelectValue(document.getElementById(`display${itemNo}BrokerId`), item.brokerId);
 				document.getElementById(`display${itemNo}BoxType`).value = item.boxType || 0;
 				//				document.getElementById(`display${itemNo}CustomMQTTTopic`).value = item.customMQTTTopic || "";
 			}
@@ -7234,7 +7267,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			for (var itemNo = 0; itemNo < Topics.length; itemNo++)
 			{
 				const topic = Topics[itemNo];
-				document.getElementById(`display${Item}CustomMQTT${itemNo}BrokerId`).value = topic.brokerId;
+				setBrokerSelectValue(document.getElementById(`display${Item}CustomMQTT${itemNo}BrokerId`), topic.brokerId);
 			}
 
 			var tooltips = document.querySelectorAll(".tooltip");
@@ -7373,7 +7406,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			item.type = document.getElementById(`display${Item}CustomMQTT${itemNo}Type`).value;
 			item.topic = document.getElementById(`display${Item}CustomMQTT${itemNo}topic`).value;
 			item.payload = document.getElementById(`display${Item}CustomMQTT${itemNo}payload`).value;
-			item.brokerId = document.getElementById(`display${Item}CustomMQTT${itemNo}BrokerId`).value;
+			item.brokerId = getBrokerSelectValue(document.getElementById(`display${Item}CustomMQTT${itemNo}BrokerId`), item.brokerId);
 			item.enabled = document.getElementById(`display${Item}CustomMQTT${itemNo}Enabled`).checked;
 		}
 
@@ -8041,7 +8074,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					displayConfiguration.items[itemNo].width = document.getElementById(`display${itemNo}Width`).value;
 					displayConfiguration.items[itemNo].rounding = document.getElementById(`display${itemNo}Rounding`).value;
 					displayConfiguration.items[itemNo].fontSize = document.getElementById(`display${itemNo}FontSize`).value;
-					displayConfiguration.items[itemNo].brokerId = document.getElementById(`display${itemNo}BrokerId`).value;
+					displayConfiguration.items[itemNo].brokerId = getBrokerSelectValue(document.getElementById(`display${itemNo}BrokerId`), displayConfiguration.items[itemNo].brokerId);
 					displayConfiguration.items[itemNo].page = document.getElementById(`display${itemNo}page`).value;
 					displayConfiguration.items[itemNo].boxType = document.getElementById(`display${itemNo}BoxType`).value;
 					displayConfiguration.items[itemNo].svg = clampSVGField(document.getElementById(`display${itemNo}SVG`)?.value || '');
@@ -8393,8 +8426,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				const leftBrokerIdElement = document.getElementById(`left${page}BrokerId`);
 				const rightBrokerIdElement = document.getElementById(`right${page}BrokerId`);
 
-				buttonConfig[page].leftBrokerId = leftBrokerIdElement.value;
-				buttonConfig[page].rightBrokerId = rightBrokerIdElement.value;
+				buttonConfig[page].leftBrokerId = getBrokerSelectValue(leftBrokerIdElement, buttonConfig[page].leftBrokerId);
+				buttonConfig[page].rightBrokerId = getBrokerSelectValue(rightBrokerIdElement, buttonConfig[page].rightBrokerId);
 
 				// reset the broker lists in all the config items
 				leftBrokerIdElement.length = 0;
@@ -8420,7 +8453,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			{
 				const displayItem = displayConfig.items[displayItemNo];
 				const brokerIdElement = document.getElementById(`display${displayItemNo}BrokerId`);
-				displayItem.brokerId = brokerIdElement.value;
+				displayItem.brokerId = getBrokerSelectValue(brokerIdElement, displayItem.brokerId);
 
 				brokerIdElement.length = 0;
 			}
@@ -8463,8 +8496,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				const rightBrokerIdElement = document.getElementById(`right${page}BrokerId`);
 
 				// select the broker in the broker list in the panel and display config
-				leftBrokerIdElement.value = buttonConfig[page].leftBrokerId;
-				rightBrokerIdElement.value = buttonConfig[page].rightBrokerId;
+				setBrokerSelectValue(leftBrokerIdElement, buttonConfig[page].leftBrokerId);
+				setBrokerSelectValue(rightBrokerIdElement, buttonConfig[page].rightBrokerId);
 			}
 
 			for (let displayItemNo = 0; displayItemNo < displayConfig.items.length; displayItemNo++)
@@ -8475,7 +8508,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				document.getElementById(`display${displayItemNo}BrokerId`).add(optionDisplay);
 				const displayItem = displayConfig.items[displayItemNo];
 				const brokerIdElement = document.getElementById(`display${displayItemNo}BrokerId`);
-				brokerIdElement.value = displayItem.brokerId;
+				setBrokerSelectValue(brokerIdElement, displayItem.brokerId);
 			}
 		}
 
@@ -8649,7 +8682,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			for (var itemNo = 0; itemNo < customMQTTTopics.length; itemNo++)
 			{
 				const topic = customMQTTTopics[itemNo];
-				document.getElementById(`${side}${page}CustomMQTT${itemNo}BrokerId`).value = topic.brokerId;
+				setBrokerSelectValue(document.getElementById(`${side}${page}CustomMQTT${itemNo}BrokerId`), topic.brokerId);
 			}
 
 			var tooltips = document.querySelectorAll(".tooltip");
@@ -8738,21 +8771,21 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				</div>`;
 
 			document.getElementById(`${Side}${Page}CustomMQTTTopicsSection`).innerHTML = section;
-			customMQTTItemsElements.push(document.getElementById(`${Side}${Page}CustomMQTT${ItemNo}BrokerId`));
+			const idx = customMQTTItemsElements.push(document.getElementById(`${Side}${Page}CustomMQTT${ItemNo}BrokerId`)) - 1;
 
 			// Add the brokers to the broker list
 			var option = document.createElement("option");
 			option.text = 'Default';
 			option.value = 'Default';
-			customMQTTItemsElements[ItemNo].add(option);
+			customMQTTItemsElements[idx].add(option);
 			for (var brokerNo = 0; brokerNo < localBrokerItems.length; brokerNo++)
 			{
 				const brokerItem = localBrokerItems[brokerNo];
 				var option = document.createElement("option");
 				option.text = brokerItem.brokerid;
 				option.value = brokerItem.brokerid;
-				customMQTTItemsElements[ItemNo].add(option);
-				customMQTTItemsElements[ItemNo].value = Topic.brokerId;
+				customMQTTItemsElements[idx].add(option);
+				setBrokerSelectValue(customMQTTItemsElements[idx], Topic.brokerId);
 			}
 		}
 
@@ -8797,7 +8830,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			item.type = document.getElementById(`${side}${page}CustomMQTT${itemNo}Type`).value;
 			item.topic = document.getElementById(`${side}${page}CustomMQTT${itemNo}topic`).value;
 			item.payload = document.getElementById(`${side}${page}CustomMQTT${itemNo}payload`).value;
-			item.brokerId = document.getElementById(`${side}${page}CustomMQTT${itemNo}BrokerId`).value;
+			item.brokerId = getBrokerSelectValue(document.getElementById(`${side}${page}CustomMQTT${itemNo}BrokerId`), item.brokerId);
 			item.enabled = document.getElementById(`${side}${page}CustomMQTT${itemNo}Enabled`).checked;
 		}
 
@@ -8945,7 +8978,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					optionDisplay.value = 'Default';
 					optionDisplay.text = defaultText;
 					document.getElementById(`display${j}BrokerId`).add(optionDisplay);
-					document.getElementById(`display${j}BrokerId`).value = displayItem.brokerId;
+					setBrokerSelectValue(document.getElementById(`display${j}BrokerId`), displayItem.brokerId);
 				}
 			}
 
@@ -8966,7 +8999,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 						leftBrokerIdElement.add(option);
 						if (buttonConfigurationsFetched)
 						{
-							leftBrokerIdElement.value = buttonPanelConfiguration[page].leftBrokerId;
+							setBrokerSelectValue(leftBrokerIdElement, buttonPanelConfiguration[page].leftBrokerId);
 						}
 
 						var option = document.createElement("option");
@@ -8975,7 +9008,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 						rightBrokerIdElement.add(option);
 						if (buttonConfigurationsFetched)
 						{
-							rightBrokerIdElement.value = buttonPanelConfiguration[page].rightBrokerId;
+							setBrokerSelectValue(rightBrokerIdElement, buttonPanelConfiguration[page].rightBrokerId);
 						}
 					}
 
@@ -9008,7 +9041,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 							optionDisplay.value = brokerItem.brokerid;
 							optionDisplay.text = brokerItem.brokerid;
 							document.getElementById(`display${j}BrokerId`).add(optionDisplay);
-							document.getElementById(`display${j}BrokerId`).value = displayItem.brokerId;
+							setBrokerSelectValue(document.getElementById(`display${j}BrokerId`), displayItem.brokerId);
 						}
 					}
 				}

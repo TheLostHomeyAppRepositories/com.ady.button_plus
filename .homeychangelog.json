@@ -319,5 +319,8 @@
 	},
 	"0.7.40": {
 		"en": "Fixes for a crash report."
+	},
+	"0.7.41": {
+		"en": "Improve broker selection values in settings - custom MQTT topics."
 	}
 }
