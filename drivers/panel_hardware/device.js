@@ -2765,11 +2765,7 @@ class PanelDevice extends Device
 				}
 			}
 
-			if (matchedCount === 0)
-			{
-				this.homey.app.updateLog(`checkStateChangeForDisplay: no matching display items for panel ${this.buttonId}, source=${deviceId}, capability=${capability}`, 1);
-			}
-			else
+			if (matchedCount !== 0)
 			{
 				this.homey.app.updateLog(`checkStateChangeForDisplay: panel ${this.buttonId}, source=${deviceId}, capability=${capability}, matched=${matchedCount}`, 1);
 			}
