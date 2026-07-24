@@ -322,5 +322,8 @@
 	},
 	"0.7.41": {
 		"en": "Improve broker selection values in settings - custom MQTT topics."
+	},
+	"0.7.42": {
+		"en": "Added advanced option to allow Display buttons to trigger Flows (provided by Laurens Van Acker)."
 	}
 }
