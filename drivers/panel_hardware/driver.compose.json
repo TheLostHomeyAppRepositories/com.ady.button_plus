@@ -187,7 +187,7 @@
 			"id": "displayButtonEvents",
 			"type": "checkbox",
 			"label": {
-				"en": "Display button Flow triggers",
+				"en": "Trigger Flows for Display buttons",
 				"nl": "Flow-triggers voor displayknoppen"
 			},
 			"hint": {
