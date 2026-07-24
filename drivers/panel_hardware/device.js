@@ -30,6 +30,7 @@ class PanelDevice extends Device
 		const settings = this.getSettings();
 
 		this.ip = settings.address;
+		this.displayButtonEvents = settings.displayButtonEvents === true;
 
 		if (!settings.statusbar)
 		{
@@ -424,6 +425,20 @@ class PanelDevice extends Device
 			{
 				throw new Error('Invalid MAC address');
 			}
+		}
+
+		if (changedKeys.includes('displayButtonEvents'))
+		{
+			this.displayButtonEvents = newSettings.displayButtonEvents === true;
+
+			// Reconfigure the connectors and republish the panel configuration so the
+			// display connector's buttons are added or removed from the panel configuration
+			setImmediate(() =>
+			{
+				this.configureConnectors(newSettings)
+					.then(() => this.uploadConfigurations())
+					.catch(this.error);
+			});
 		}
 
 		let refreshDateAndTime = false;
@@ -1461,14 +1476,14 @@ class PanelDevice extends Device
 				}
 			}
 
-			if (connectType !== 1) // 0 = not fitted, 1 = button panel, 2 = display
+			if (connectType !== 1) // 0 = not fitted, 1 = button panel, 2 = display, 3 = display (V2 panels)
 			{
 				if (this.hasCapability(`configuration_button.connector${connector}`))
 				{
 					await this.removeCapability(`configuration_button.connector${connector}`);
 				}
 
-				if (connectType !== 2)
+				if ((connectType !== 2) && ((connectType !== 3) || (this.displayButtonEvents !== true)))
 				{
 					await this.removeCapability(`left_button.connector${connector}`);
 					await this.removeCapability(`right_button.connector${connector}`);
@@ -1712,7 +1727,7 @@ class PanelDevice extends Device
 		parameters.buttonCapability = `${parameters.side}_button.connector${parameters.connector}`;
 		parameters.fromButton = true;
 		const connectorType = this.getSetting(`connect${parameters.connector}Type`);
-		parameters.configNo = connectorType === 2 ? null : this.getCapabilityValue(`configuration_button.connector${parameters.connector}`);
+		parameters.configNo = ((connectorType === 2) || (connectorType === 3)) ? null : this.getCapabilityValue(`configuration_button.connector${parameters.connector}`);
 		await this.processClickMessage(parameters);
 	}
 
@@ -1907,7 +1922,7 @@ class PanelDevice extends Device
 		parameters.connector = (MQTTMessage.idx / 2) | 0;
 		parameters.side = (MQTTMessage.idx % 2) === 0 ? 'left' : 'right';
 		parameters.connectorType = this.getSetting(`connect${parameters.connector}Type`);
-		parameters.configNo = parameters.connectorType === 2 ? this.getCapabilityValue('configuration_display') : this.getCapabilityValue(`configuration_button.connector${parameters.connector}`);
+		parameters.configNo = ((parameters.connectorType === 2) || (parameters.connectorType === 3)) ? this.getCapabilityValue('configuration_display') : this.getCapabilityValue(`configuration_button.connector${parameters.connector}`);
 		parameters.buttonCapability = `${parameters.side}_button.connector${parameters.connector}`;
 		parameters.value = !this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`);
 
@@ -1937,7 +1952,7 @@ class PanelDevice extends Device
 	{
 		// Check if a large display or if no configuration assigned to this connector
 		let config = null;
-		if ((parameters.configNo != null) && (parameters.connectorType !== 2))
+		if ((parameters.configNo != null) && (parameters.connectorType !== 2) && (parameters.connectorType !== 3))
 		{
 			if (!parameters.page)
 			{
@@ -2154,7 +2169,7 @@ class PanelDevice extends Device
 		}
 
 		let buttonPanelConfiguration = null;
-		if (parameters.configNo != null)
+		if ((parameters.configNo != null) && (parameters.connectorType !== 2) && (parameters.connectorType !== 3))
 		{
 			buttonPanelConfiguration = this.homey.app.buttonConfigurations[parameters.configNo];
 			if (buttonPanelConfiguration[`${parameters.side}DisableLongRepeat`] && (repeatCount > 0))
@@ -2171,7 +2186,16 @@ class PanelDevice extends Device
 		this.longPressOccurred.set(`${parameters.connector}_${parameters.side}_${parameters.page}`, repeatCount + 1);
 		this.homey.app.triggerButtonLongPress(this, parameters.side === 'left', parameters.connector + 1, repeatCount, parameters.page);
 
-		if (buttonPanelConfiguration !== null)
+		if ((parameters.connectorType === 2) || (parameters.connectorType === 3))
+		{
+			// Display connector buttons: fire the configuration button trigger so long presses can start flows
+			if (repeatCount === 0)
+			{
+				const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`);
+				this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value, parameters.page);
+			}
+		}
+		else if (buttonPanelConfiguration !== null)
 		{
 			const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`);
 
@@ -2208,7 +2232,7 @@ class PanelDevice extends Device
 		}
 
 		// Check if a large display or if no configuration assigned to this connector
-		if ((parameters.connectorType === 2) || (parameters.configNo == null))
+		if ((parameters.connectorType === 2) || (parameters.connectorType === 3) || (parameters.configNo == null))
 		{
 			this.setLEDOnOff(config, null, buttonIdx, parameters.page, false);
 			if (parameters.page === this.page)
@@ -2349,9 +2373,20 @@ class PanelDevice extends Device
 					configNo = this.getCapabilityValue(`configuration_button.connector${i}`);
 				}
 
+				// Display connectors have no button configuration, but a section entry must still be
+				// generated for their two buttons so the panel publishes click events for them.
+				// Only done when the displayButtonEvents setting is enabled (default off) so
+				// existing installations keep their current behaviour.
+				// Use the display configuration number so applyButtonConfiguration can add the defaults.
+				let applyConfigNo = configNo;
+				if ((configNo == null) && (this.displayButtonEvents === true) && ((connectorType === 2) || (connectorType === 3)) && this.hasCapability('configuration_display'))
+				{
+					applyConfigNo = this.getCapabilityValue('configuration_display');
+				}
+
 				try
 				{
-					let numPages = await this.homey.app.applyButtonConfiguration(this.buttonId, connectorType, sectionConfiguration, i, configNo, this.firmwareVersion);
+					let numPages = await this.homey.app.applyButtonConfiguration(this.buttonId, connectorType, sectionConfiguration, i, applyConfigNo, this.firmwareVersion);
 					if (numPages > this.numPages)
 					{
 						this.numPages = numPages;

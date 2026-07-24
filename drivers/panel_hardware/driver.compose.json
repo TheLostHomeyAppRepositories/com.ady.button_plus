@@ -184,6 +184,19 @@
 			]
 		},
 		{
+			"id": "displayButtonEvents",
+			"type": "checkbox",
+			"label": {
+				"en": "Display button Flow triggers",
+				"nl": "Flow-triggers voor displayknoppen"
+			},
+			"hint": {
+				"en": "Send click, long press and release events for the two buttons next to the display so they can trigger Flows (configuration button cards). Note: on panels with multiple pages these buttons also navigate between pages.",
+				"nl": "Stuur klik-, lang indrukken- en loslaat-events voor de twee knoppen naast het display zodat ze Flows kunnen starten (configuratieknop-kaarten). Let op: bij meerdere pagina's bladeren deze knoppen ook door de pagina's."
+			},
+			"value": false
+		},
+		{
 			"id": "temperatureCalibration",
 			"type": "number",
 			"label": {

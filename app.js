@@ -1607,7 +1607,7 @@ class MyApp extends Homey.App
 				}
 			}
 		}
-		else if (connectorType === 2)
+		else if ((connectorType === 2) || (connectorType === 3))
 		{
 			if (!checkSEMVerGreaterOrEqual(firmwareVersion, '2.0.0'))
 			{
@@ -2917,7 +2917,7 @@ class MyApp extends Homey.App
 		const tokens = { state: onoff, page };
 		const state = {
 			left_right,
-			displaybutton: display_button === 2 ? 'display' : 'button',
+			displaybutton: ((display_button === 2) || (display_button === 3)) ? 'display' : 'button',
 			config: parseInt(configID, 10) + 1,
 			state: button_state,
 		};
@@ -3026,7 +3026,7 @@ class MyApp extends Homey.App
 			button.toplabel = '';
 			button.topics = [];
 
-			if (connectorType === 2)
+			if ((connectorType === 2) || (connectorType === 3))
 			{
 				button.leds = [];
 			}
