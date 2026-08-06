@@ -116,6 +116,7 @@ const DISPLAY_FONT_SIZE_LOOKUP = { 1: 18, 2: 35, 3: 45, 4: 66, 5: 100 };
 		var configDraftRestoreDecisionMade = false;
 		var restoredDraftDefaultBroker = null;
 		var configDraftStoreButtonSettingsFn = null;
+		var capabilityRequestTokens = new Map();
 
 		function enableConfigurationDraftAutoSave()
 		{
@@ -1953,6 +1954,26 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				}
 			}
 
+			configNameElement.addEventListener('change', function ()
+			{
+				var buttonPanelConfiguration = localButtonConfigurations[currentButtonConfigurationNo];
+				if (!Array.isArray(buttonPanelConfiguration) || buttonPanelConfiguration.length === 0)
+				{
+					buttonPanelConfiguration = [{ PageNum: 0 }];
+					localButtonConfigurations[currentButtonConfigurationNo] = buttonPanelConfiguration;
+				}
+
+				buttonPanelConfiguration[0].name = configNameElement.value;
+
+				// Update the configuration list
+				let txt = Homey.__("settings.buttonConfig");
+				var option = buttonConfigurationNoElement.options[buttonConfigurationNoElement.selectedIndex];
+				if (option)
+				{
+					option.text = `${txt} ${parseInt(currentButtonConfigurationNo, 10) + 1} - ${configNameElement.value}`;
+				}
+			});
+
 			displayConfigNameElement.addEventListener('change', function (e)
 			{
 				var DisplayConfiguration = localDisplayConfigurations[currentDisplayConfigurationNo];
@@ -1975,6 +1996,13 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			{
 				try
 				{
+					// Sync unsaved UI edits into the local model before copying.
+					var currentButtonPanelConfiguration = localButtonConfigurations[currentButtonConfigurationNo];
+					if (Array.isArray(currentButtonPanelConfiguration))
+					{
+						storeButtonSettings(currentButtonPanelConfiguration);
+					}
+
 					// Copy the current button configuration to the clipboard in JSON format
 					var buttonPanelConfiguration = localButtonConfigurations[currentButtonConfigurationNo];
 					var copy = {};
@@ -1999,6 +2027,24 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				{
 					// Parse the JSON string
 					const copy = JSON.parse(copyTextElement.value);
+					if (!copy || typeof copy !== 'object' || Array.isArray(copy))
+					{
+						Homey.alert(Homey.__("settings.clipboardError", { error: "Invalid top-level structure: expected an object" }));
+						return;
+					}
+
+					const allowedTopLevelKeys = ['copySource', 'butons'];
+					const unknownTopLevelKeys = Object.keys(copy).filter(function (key)
+					{
+						return !allowedTopLevelKeys.includes(key);
+					});
+
+					if (unknownTopLevelKeys.length > 0)
+					{
+						Homey.alert(Homey.__("settings.clipboardError", { error: `Unknown top-level field(s): ${unknownTopLevelKeys.join(', ')}` }));
+						return;
+					}
+
 					if (copy.copySource !== "ButtonPanel")
 					{
 						Homey.alert(Homey.__("settings.clipboardError", { error: "Invalid source" }));
@@ -2007,49 +2053,41 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 					let buttonPanelConfiguration = localButtonConfigurations[currentButtonConfigurationNo];
 					let newButtonPanelConfiguration = copy.butons;
+					if (!Array.isArray(newButtonPanelConfiguration))
+					{
+						Homey.alert(Homey.__("settings.clipboardError", { error: "Invalid data" }));
+						return;
+					}
 
 					for (let page = 0; page < newButtonPanelConfiguration.length; page++)
 					{
+						const sourcePageConfiguration = newButtonPanelConfiguration[page];
+						if (!sourcePageConfiguration || typeof sourcePageConfiguration !== 'object')
+						{
+							continue;
+						}
+
 						// if the page doesn't exist, add it
 						if (!buttonPanelConfiguration[page])
 						{
 							buttonPanelConfiguration[page] = {};
 						}
 
-						// Copy the values from the new configuration to the current configuration
+						// Copy every known field so newly introduced settings (for example SVG data) are preserved.
+						Object.keys(sourcePageConfiguration).forEach(function (fieldName)
+						{
+							if (fieldName === 'PageNum')
+							{
+								return;
+							}
+
+							if (sourcePageConfiguration[fieldName] !== undefined)
+							{
+								buttonPanelConfiguration[page][fieldName] = sourcePageConfiguration[fieldName];
+							}
+						});
+
 						buttonPanelConfiguration[page].PageNum = page;
-
-						if (newButtonPanelConfiguration[page].leftTopText !== undefined) buttonPanelConfiguration[page].leftTopText = newButtonPanelConfiguration[page].leftTopText;
-						if (newButtonPanelConfiguration[page].leftOnText !== undefined) buttonPanelConfiguration[page].leftOnText = newButtonPanelConfiguration[page].leftOnText;
-						if (newButtonPanelConfiguration[page].leftOffText !== undefined) buttonPanelConfiguration[page].leftOffText = newButtonPanelConfiguration[page].leftOffText;
-						if (newButtonPanelConfiguration[page].leftDevice !== undefined) buttonPanelConfiguration[page].leftDevice = newButtonPanelConfiguration[page].leftDevice;
-						if (newButtonPanelConfiguration[page].leftDeviceName !== undefined) buttonPanelConfiguration[page].leftDeviceName = newButtonPanelConfiguration[page].leftDeviceName;
-						if (newButtonPanelConfiguration[page].leftCapability !== undefined) buttonPanelConfiguration[page].leftCapability = newButtonPanelConfiguration[page].leftCapability;
-						if (newButtonPanelConfiguration[page].leftCapabilityName !== undefined) buttonPanelConfiguration[page].leftCapabilityName = newButtonPanelConfiguration[page].leftCapabilityName;
-						if (newButtonPanelConfiguration[page].leftBrokerId !== undefined) buttonPanelConfiguration[page].leftBrokerId = newButtonPanelConfiguration[page].leftBrokerId;
-						if (newButtonPanelConfiguration[page].leftDimChange !== undefined) buttonPanelConfiguration[page].leftDimChange = newButtonPanelConfiguration[page].leftDimChange;
-						if (newButtonPanelConfiguration[page].leftFrontLEDOnColor !== undefined) buttonPanelConfiguration[page].leftFrontLEDOnColor = newButtonPanelConfiguration[page].leftFrontLEDOnColor;
-						if (newButtonPanelConfiguration[page].leftWallLEDOnColor !== undefined) buttonPanelConfiguration[page].leftWallLEDOnColor = newButtonPanelConfiguration[page].leftWallLEDOnColor;
-						if (newButtonPanelConfiguration[page].leftFrontLEDOffColor !== undefined) buttonPanelConfiguration[page].leftFrontLEDOffColor = newButtonPanelConfiguration[page].leftFrontLEDOffColor;
-						if (newButtonPanelConfiguration[page].leftWallLEDOffColor !== undefined) buttonPanelConfiguration[page].leftWallLEDOffColor = newButtonPanelConfiguration[page].leftWallLEDOffColor;
-						if (newButtonPanelConfiguration[page].leftCustomMQTTTopics !== undefined) buttonPanelConfiguration[page].leftCustomMQTTTopics = newButtonPanelConfiguration[page].leftCustomMQTTTopics;
-						if (newButtonPanelConfiguration[page].leftDisableLongRepeat !== undefined) buttonPanelConfiguration[page].leftDisableLongRepeat = newButtonPanelConfiguration[page].leftDisableLongRepeat;
-
-						if (newButtonPanelConfiguration[page].rightTopText !== undefined) buttonPanelConfiguration[page].rightTopText = newButtonPanelConfiguration[page].rightTopText;
-						if (newButtonPanelConfiguration[page].rightOnText !== undefined) buttonPanelConfiguration[page].rightOnText = newButtonPanelConfiguration[page].rightOnText;
-						if (newButtonPanelConfiguration[page].rightOffText !== undefined) buttonPanelConfiguration[page].rightOffText = newButtonPanelConfiguration[page].rightOffText;
-						if (newButtonPanelConfiguration[page].rightDevice !== undefined) buttonPanelConfiguration[page].rightDevice = newButtonPanelConfiguration[page].rightDevice;
-						if (newButtonPanelConfiguration[page].rightDeviceName !== undefined) buttonPanelConfiguration[page].rightDeviceName = newButtonPanelConfiguration[page].rightDeviceName;
-						if (newButtonPanelConfiguration[page].rightCapability !== undefined) buttonPanelConfiguration[page].rightCapability = newButtonPanelConfiguration[page].rightCapability;
-						if (newButtonPanelConfiguration[page].rightCapabilityName !== undefined) buttonPanelConfiguration[page].rightCapabilityName = newButtonPanelConfiguration[page].rightCapabilityName;
-						if (newButtonPanelConfiguration[page].rightBrokerId !== undefined) buttonPanelConfiguration[page].rightBrokerId = newButtonPanelConfiguration[page].rightBrokerId;
-						if (newButtonPanelConfiguration[page].rightDimChange !== undefined) buttonPanelConfiguration[page].rightDimChange = newButtonPanelConfiguration[page].rightDimChange;
-						if (newButtonPanelConfiguration[page].rightFrontLEDOnColor !== undefined) buttonPanelConfiguration[page].rightFrontLEDOnColor = newButtonPanelConfiguration[page].rightFrontLEDOnColor;
-						if (newButtonPanelConfiguration[page].rightWallLEDOnColor !== undefined) buttonPanelConfiguration[page].rightWallLEDOnColor = newButtonPanelConfiguration[page].rightWallLEDOnColor;
-						if (newButtonPanelConfiguration[page].rightFrontLEDOffColor !== undefined) buttonPanelConfiguration[page].rightFrontLEDOffColor = newButtonPanelConfiguration[page].rightFrontLEDOffColor;
-						if (newButtonPanelConfiguration[page].rightWallLEDOffColor !== undefined) buttonPanelConfiguration[page].rightWallLEDOffColor = newButtonPanelConfiguration[page].rightWallLEDOffColor;
-						if (newButtonPanelConfiguration[page].rightCustomMQTTTopics !== undefined) buttonPanelConfiguration[page].rightCustomMQTTTopics = newButtonPanelConfiguration[page].rightCustomMQTTTopics;
-						if (newButtonPanelConfiguration[page].rightLongRepeat !== undefined) buttonPanelConfiguration[page].rightLongRepeat = newButtonPanelConfiguration[page].rightLongRepeat;
 					}
 					// Update the controls
 					writeButtonsections(buttonPanelConfiguration.length);
@@ -2065,10 +2103,15 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			{
 				try
 				{
+					storeDisplaySettings();
+
 					// Copy the current button configuration to the clipboard in JSON format
 					var displayConfiguration = localDisplayConfigurations[currentDisplayConfigurationNo];
-					displayConfiguration.copySource = "Display";
-					const jsonString = JSON.stringify(displayConfiguration, null, 2);
+					const copy = {
+						copySource: "Display",
+						displayConfiguration: displayConfiguration,
+					};
+					const jsonString = JSON.stringify(copy, null, 2);
 
 					copyTextElement.value = jsonString;
 
@@ -2086,17 +2129,56 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				try
 				{
 					// Parse the JSON string
-					const newDisplayConfiguration = JSON.parse(copyTextElement.value);
-					if (newDisplayConfiguration.copySource !== "Display")
+					const copy = JSON.parse(copyTextElement.value);
+					if (!copy || typeof copy !== 'object' || Array.isArray(copy))
+					{
+						Homey.alert(Homey.__("settings.clipboardError", { error: "Invalid top-level structure: expected an object" }));
+						return;
+					}
+
+					if (copy.copySource !== "Display")
 					{
 						Homey.alert(Homey.__("settings.clipboardError", { error: "Invalid source" }));
 						return;
 					}
 
+					if (Object.prototype.hasOwnProperty.call(copy, 'displayConfiguration'))
+					{
+						const allowedTopLevelKeys = ['copySource', 'displayConfiguration'];
+						const unknownTopLevelKeys = Object.keys(copy).filter(function (key)
+						{
+							return !allowedTopLevelKeys.includes(key);
+						});
+
+						if (unknownTopLevelKeys.length > 0)
+						{
+							Homey.alert(Homey.__("settings.clipboardError", { error: `Unknown top-level field(s): ${unknownTopLevelKeys.join(', ')}` }));
+							return;
+						}
+					}
+
+					const newDisplayConfiguration = copy.displayConfiguration || copy;
+					if (!newDisplayConfiguration || typeof newDisplayConfiguration !== 'object')
+					{
+						Homey.alert(Homey.__("settings.clipboardError", { error: "Invalid data" }));
+						return;
+					}
+
 					let displayConfiguration = localDisplayConfigurations[currentDisplayConfigurationNo];
 
-					// Copy the values from the new configuration to the current configuration
-					displayConfiguration.items = newDisplayConfiguration.items;
+					// Copy all available display fields so newly added properties are not lost.
+					Object.keys(newDisplayConfiguration).forEach(function (fieldName)
+					{
+						if (fieldName === 'copySource')
+						{
+							return;
+						}
+
+						if (newDisplayConfiguration[fieldName] !== undefined)
+						{
+							displayConfiguration[fieldName] = newDisplayConfiguration[fieldName];
+						}
+					});
 
 					// Update the controls
 					updateDisplayConfiguration();
@@ -3291,10 +3373,19 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			for (let i = 0; i < NumConfigurations; i++)
 			{
 				let config = configurations[i];
+				let configName = '';
+				if (Array.isArray(config))
+				{
+					configName = (config[0] && config[0].name) ? config[0].name : '';
+				}
+				else
+				{
+					configName = (config && config.name) ? config.name : '';
+				}
 
 				var option = document.createElement("option");
 				option.value = i;
-				option.text = `${txt} ${i + 1} - ${(config && config.name) ? config.name : ''}`;
+				option.text = `${txt} ${i + 1} - ${configName}`;
 				element.add(option);
 			}
 		}
@@ -4127,6 +4218,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				FrontLEDOffColor: 'settings.frontLEDOffColorExplanation',
 				WallLEDOffColor: 'settings.wallLEDOffColorExplanation',
 			};
+			const textAndSvgFields = ['Device', 'Capability', 'OnText', 'OffText', 'OnSVG', 'OffSVG'];
 
 			if (fieldSuffix === 'TopText')
 			{
@@ -4142,7 +4234,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			{
 				return {
 					title: `${sideLabel} - ${Homey.__('settings.text')}`,
-					fields: ['Device', 'Capability', 'OnText', 'OffText', 'OnSVG', 'OffSVG'],
+					fields: textAndSvgFields,
 					labels,
 					tooltipKeys,
 				};
@@ -4150,13 +4242,9 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 			if (fieldSuffix === 'OnText' || fieldSuffix === 'OffText')
 			{
-				const valueFields = (fieldSuffix === 'OnText')
-					? ['Device', 'Capability', 'OnText', 'OffText', 'OnSVG', 'OffSVG']
-					: ['Device', 'Capability', 'OffText', 'OnText', 'OnSVG', 'OffSVG'];
-
 				return {
 					title: `${sideLabel} - ${Homey.__('settings.text')}`,
-					fields: valueFields,
+					fields: textAndSvgFields,
 					labels,
 					tooltipKeys,
 				};
@@ -4164,13 +4252,9 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 			if (fieldSuffix === 'OnSVG' || fieldSuffix === 'OffSVG')
 			{
-				const svgFields = (fieldSuffix === 'OnSVG')
-					? ['Device', 'Capability', 'OnText', 'OffText', 'OnSVG', 'OffSVG']
-					: ['Device', 'Capability', 'OffText', 'OnText', 'OffSVG', 'OnSVG'];
-
 				return {
 					title: `${sideLabel} - ${Homey.__('settings.text')}`,
-					fields: svgFields,
+					fields: textAndSvgFields,
 					labels,
 					tooltipKeys,
 				};
@@ -6611,6 +6695,18 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 		function getCapabilities(side, page, deviceId, selectedCapability, selectedCapabilityName)
 		{
+			const requestKey = `${side}:${page}`;
+			const requestToken = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			capabilityRequestTokens.set(requestKey, requestToken);
+
+			const isLatestCapabilityRequest = () => capabilityRequestTokens.get(requestKey) === requestToken;
+
+			const matchesCurrentDeviceSelection = () =>
+			{
+				const currentDeviceElement = document.getElementById(`${side}${page}Device`);
+				return !!currentDeviceElement && currentDeviceElement.value === deviceId;
+			};
+
 			// Remove any ' (Missing)' text from the selectedCapabilityName
 			selectedCapabilityName = selectedCapabilityName ? selectedCapabilityName.replace(/ \(Missing\)/g, "") : selectedCapabilityName;
 
@@ -6663,6 +6759,11 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					// Resquest the list of variables
 					Homey.api('POST', '/get_variables/', {}, function (err, variables)
 					{
+						if (!isLatestCapabilityRequest() || !matchesCurrentDeviceSelection())
+						{
+							return;
+						}
+
 						if (err) return Homey.alert(err);
 
 						if (variables)
@@ -6716,6 +6817,11 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			// Request the capabilities for the selected device
 			Homey.api('POST', '/device_capabilities/', { deviceId }, function (err, capabilities)
 			{
+				if (!isLatestCapabilityRequest() || !matchesCurrentDeviceSelection())
+				{
+					return;
+				}
+
 				if (err) return Homey.alert(err);
 
 				if (capabilities)
@@ -6777,7 +6883,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					{
 						capabilityElement.value = capabilityElement.options[0].value;
 					}
-					capabilityChanged(side, page, selectedCapability);
+					capabilityChanged(side, page, capabilityElement.value);
 					updateButtonCapabilityIndicator(side, page);
 					hidePopupManagedFieldsForSection(side, page);
 				}
@@ -9093,15 +9199,15 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			config[`${side}Device`] = deviceElement.value;
 			if (deviceElement.selectedIndex >= 0)
 			{
-				config[`${side}CapabilityName`] = deviceElement.options[deviceElement.selectedIndex].text;
+				config[`${side}DeviceName`] = deviceElement.options[deviceElement.selectedIndex].text;
 			}
 			else
 			{
-				config[`${side}CapabilityName`] = deviceElement.value;
+				config[`${side}DeviceName`] = deviceElement.value;
 			}
 
-			// Remove all occurrences of ' (Missing Devices)' from the capability name
-			config[`${side}CapabilityName`] = config[`${side}CapabilityName`].replace(/ \(Missing Devices\)/g, '');
+			// Remove all occurrences of ' (Missing Devices)' from the device name
+			config[`${side}DeviceName`] = config[`${side}DeviceName`].replace(/ \(Missing Devices\)/g, '');
 
 			// Remove any leading spaces from the device name
 			config[`${side}Device`] = config[`${side}Device`].trim();
