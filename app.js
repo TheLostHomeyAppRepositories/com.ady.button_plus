@@ -52,6 +52,7 @@ class MyApp extends Homey.App
 		this.dataSent = new Map();
 		this.dateTimer = null;
 		this.diagLog = '';
+		this.logRealtimeTimer = null;
 
 		const defaultbroker = this.homey.settings.get('defaultBroker');
 		if (!defaultbroker)
@@ -2663,6 +2664,27 @@ class MyApp extends Homey.App
 	}
 
 	// Add a message to the debug log if not running in the cloud
+	scheduleLogRealtimeUpdate()
+	{
+		if (this.cloudOnly || this.logRealtimeTimer)
+		{
+			return;
+		}
+
+		this.logRealtimeTimer = this.homey.setTimeout(() =>
+		{
+			this.logRealtimeTimer = null;
+			try
+			{
+				this.homey.api.realtime('com.ady.button_plus.logupdated', { log: this.diagLog });
+			}
+			catch (err)
+			{
+				this.log(err);
+			}
+		}, 1000);
+	}
+
 	updateLog(newMessage, errorLevel = 1)
 	{
 		if ((errorLevel === 0) || this.homey.settings.get('logEnabled'))
@@ -2702,7 +2724,7 @@ class MyApp extends Homey.App
 
 				if (!this.cloudOnly)
 				{
-					this.homey.api.realtime('com.ady.button_plus.logupdated', { log: this.diagLog });
+					this.scheduleLogRealtimeUpdate();
 				}
 			}
 			catch (err)
@@ -2802,6 +2824,11 @@ class MyApp extends Homey.App
 	{
 		const deviceId = (typeof device === 'string') ? device : (device && device.id ? device.id : 'unknown');
 		this.updateLog(`registerDeviceCapabilityStateChange request: device=${deviceId}, capability=${capabilityId}`);
+		if (!device || !capabilityId)
+		{
+			this.updateLog(`Skipping invalid capability listener registration: device=${deviceId}, capability=${capabilityId || ''}`, 0);
+			return false;
+		}
 
 		const retryKey = `${deviceId}::${capabilityId}`;
 		if (source === 'display')

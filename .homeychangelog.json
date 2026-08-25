@@ -328,5 +328,8 @@
 	},
 	"0.7.43": {
 		"en": "Enhance device normalization and registration logic to prevent duplicate topic mappings. Fix copy and paste to include SVG code. Prevented On and Off fields form swapping when state is changed. Show configuration name in the button configuration list."
+	},
+	"0.7.44": {
+		"en": "Minor fixes and improvements."
 	}
 }

@@ -117,6 +117,7 @@ const DISPLAY_FONT_SIZE_LOOKUP = { 1: 18, 2: 35, 3: 45, 4: 66, 5: 100 };
 		var restoredDraftDefaultBroker = null;
 		var configDraftStoreButtonSettingsFn = null;
 		var capabilityRequestTokens = new Map();
+		var displayCapabilityRequestTokens = new Map();
 
 		function enableConfigurationDraftAutoSave()
 		{
@@ -7915,9 +7916,23 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 		function getDisplayCapabilities(itemNo)
 		{
-			var deviceId = document.getElementById(`display${itemNo}Device`).value;
+			const deviceElement = document.getElementById(`display${itemNo}Device`);
+			var deviceId = deviceElement.value;
 			var capabilitiesElement = document.getElementById(`display${itemNo}Capability`);
+			const previousDeviceId = capabilitiesElement.dataset.deviceId || '';
+			const currentDisplayConfig = localDisplayConfigurations[displayConfigurationNoElement.value];
+			const configuredItem = currentDisplayConfig && currentDisplayConfig.items ? currentDisplayConfig.items[itemNo] : null;
+			const selectedCapability = previousDeviceId === deviceId
+				? capabilitiesElement.value
+				: (configuredItem && configuredItem.device === deviceId ? configuredItem.capability : '');
+			const requestToken = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			displayCapabilityRequestTokens.set(itemNo, requestToken);
+			const isCurrentRequest = () => displayCapabilityRequestTokens.get(itemNo) === requestToken
+				&& document.getElementById(`display${itemNo}Device`) === deviceElement
+				&& deviceElement.value === deviceId;
+
 			capabilitiesElement.innerHTML = "";
+			capabilitiesElement.dataset.deviceId = deviceId;
 
 			if (deviceId === 'customMQTT')
 			{
@@ -7945,11 +7960,10 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 				var selectedVariable = '';
 				var selectedVariableName = '';
-				var displayConfig = localDisplayConfigurations[displayConfigurationNoElement.value];
-				if (displayConfig)
+				if (configuredItem && configuredItem.device === deviceId)
 				{
-					selectedVariable = displayConfig.items[itemNo].capability;
-					selectedVariableName = displayConfig.items[itemNo].capabilityName;
+					selectedVariable = configuredItem.capability;
+					selectedVariableName = configuredItem.capabilityName;
 				}
 
 				if (variablesFetched && variablesArray.length > 0)
@@ -7980,6 +7994,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					// Resquest the list of variables
 					Homey.api('POST', '/get_variables/', {}, function (err, variables)
 					{
+						if (!isCurrentRequest()) return;
 						if (err) return Homey.alert(err);
 
 						if (variables)
@@ -8011,25 +8026,26 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			const capabilities = displayCapabilityItems.get(deviceId);
 			if (capabilities)
 			{
-				fillDisplayCapabilitiesElement(itemNo, capabilitiesElement, capabilities);
+				fillDisplayCapabilitiesElement(itemNo, capabilitiesElement, capabilities, selectedCapability);
 			}
 			else
 			{
 				// Resquest the list of capabilities
 				Homey.api('POST', '/device_capabilities/', { deviceId }, function (err, capabilities)
 				{
+					if (!isCurrentRequest()) return;
 					if (err) return Homey.alert(err);
 
 					if (capabilities)
 					{
 						displayCapabilityItems.set(deviceId, capabilities);
-						fillDisplayCapabilitiesElement(itemNo, capabilitiesElement, capabilities);
+						fillDisplayCapabilitiesElement(itemNo, capabilitiesElement, capabilities, selectedCapability);
 					}
 				});
 			}
 		}
 
-		function fillDisplayCapabilitiesElement(itemNo, capabilitiesElement, capabilities)
+		function fillDisplayCapabilitiesElement(itemNo, capabilitiesElement, capabilities, selectedCapability = null)
 		{
 			const capabilitiesArray = Object.values(capabilities);
 			for (const capability of capabilitiesArray)
@@ -8052,7 +8068,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			var displayConfig = localDisplayConfigurations[displayConfigurationNoElement.value];
 			if (displayConfig)
 			{
-				const capabilityID = displayConfig.items[itemNo].capability;
+				const capabilityID = selectedCapability !== null ? selectedCapability : displayConfig.items[itemNo].capability;
 				if (capabilities[capabilityID])
 				{
 					if (document.getElementById(`display${itemNo}Unit`).value === '')
@@ -8060,7 +8076,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 						document.getElementById(`display${itemNo}Unit`).value = capabilities[capabilityID].unit ? capabilities[capabilityID].unit : "";
 					}
 				}
-				else
+				else if (capabilityID)
 				{
 					// The capability must be missing, so add it to the list
 					var option = document.createElement("option");
@@ -8069,7 +8085,14 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					capabilitiesElement.add(option);
 				}
 
-				capabilitiesElement.value = capabilityID;
+				if (capabilityID)
+				{
+					capabilitiesElement.value = capabilityID;
+				}
+				else if (capabilitiesElement.options.length > 0)
+				{
+					capabilitiesElement.selectedIndex = 0;
+				}
 			}
 		}
 
