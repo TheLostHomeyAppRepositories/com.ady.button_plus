@@ -333,6 +333,9 @@
 		"en": "Minor fixes and improvements."
 	},
 	"0.7.45": {
-		"en": "Restored the long press auto-repeat option and added configurable initial and repeat delays in Button Configuration. Fixed repeat persistence and per-page handling."
+		"en": "Restored the long press auto-repeat option and added configurable initial and repeat delays in Button Configuration. Firmware v3 long-press events are throttled in the app to prevent Flow flooding. Fixed repeat persistence and per-page handling."
+	},
+	"0.7.46": {
+		"en": "Handle V3 long press event in the app as it has a fixed interval of 20ms."
 	}
 }

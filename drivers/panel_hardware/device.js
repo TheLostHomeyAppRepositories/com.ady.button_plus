@@ -8,6 +8,8 @@ const _ = require('lodash');
 const { checkSEMVerGreaterOrEqual } = require('../../lib/HttpHelper');
 const { isSvgTextContent } = require('../../lib/SvgHelper');
 
+const V3_LONG_PRESS_EVENT_INTERVAL_MS = 20;
+
 class PanelDevice extends Device
 {
 
@@ -19,6 +21,7 @@ class PanelDevice extends Device
 		//		this.setUnavailable('Device is initializing');
 		this.initFinished = false;
 		this.longPressOccurred = new Map();
+		this.longPressEventCounts = new Map();
 		this.lastLongPressTimes = new Map();
 		this.buttonValues = new Map();
 		this.capabilityDispatchInFlight = new Set();
@@ -564,6 +567,10 @@ class PanelDevice extends Device
 		if (this.longPressOccurred)
 		{
 			this.longPressOccurred.clear();
+		}
+		if (this.longPressEventCounts)
+		{
+			this.longPressEventCounts.clear();
 		}
 		if (this.lastLongPressTimes)
 		{
@@ -1935,6 +1942,10 @@ class PanelDevice extends Device
 		if (MQTTMessage.event === 'click')
 		{
 			this.homey.app.updateLog(`Panel processing MQTT message: ${MQTTMessage.event}`);
+			const longPressKey = `${parameters.connector}_${parameters.side}_${parameters.page}`;
+			this.longPressOccurred.set(longPressKey, 0);
+			this.longPressEventCounts.delete(longPressKey);
+			this.lastLongPressTimes.delete(longPressKey);
 
 			// The button was pressed
 			this.processClickMessage(parameters);
@@ -2161,14 +2172,19 @@ class PanelDevice extends Device
 	async processLongPressMessage(parameters)
 	{
 		const longPressKey = `${parameters.connector}_${parameters.side}_${parameters.page}`;
-		const lastLongPressTime = this.lastLongPressTimes.get(longPressKey);
-		if (lastLongPressTime && ((Date.now() - lastLongPressTime) < 25))
+		const isFirmwareV3 = checkSEMVerGreaterOrEqual(this.firmwareVersion, '3.0.0');
+		if (!isFirmwareV3)
 		{
-			// ignore long press messages that are too close together
-			return;
+			const lastLongPressTime = this.lastLongPressTimes.get(longPressKey);
+			if (lastLongPressTime && ((Date.now() - lastLongPressTime) < 25))
+			{
+				// Ignore duplicate long press messages from firmware that handles its own repeat interval.
+				return;
+			}
+
+			this.lastLongPressTimes.set(longPressKey, Date.now());
 		}
 
-		this.lastLongPressTimes.set(longPressKey, Date.now());
 		let repeatCount = this.longPressOccurred.get(longPressKey);
 		if (repeatCount === undefined)
 		{
@@ -2180,8 +2196,22 @@ class PanelDevice extends Device
 		if ((parameters.configNo != null) && (parameters.connectorType !== 2) && (parameters.connectorType !== 3))
 		{
 			buttonPanelConfiguration = this.homey.app.buttonConfigurations[parameters.configNo];
-			buttonPageConfiguration = buttonPanelConfiguration[parameters.page] || buttonPanelConfiguration[0] || {};
+			buttonPageConfiguration = buttonPanelConfiguration ? (buttonPanelConfiguration[parameters.page] || buttonPanelConfiguration[0] || {}) : {};
 			if (buttonPageConfiguration[`${parameters.side}DisableLongRepeat`] && (repeatCount > 0))
+			{
+				return null;
+			}
+		}
+
+		if (isFirmwareV3)
+		{
+			const configuredRepeatMs = parseInt(buttonPageConfiguration && buttonPageConfiguration[`${parameters.side}LongRepeatMs`], 10);
+			const repeatIntervalMs = Number.isNaN(configuredRepeatMs) ? 500 : Math.max(50, Math.min(configuredRepeatMs, 10000));
+			const eventsPerRepeat = Math.max(1, Math.ceil(repeatIntervalMs / V3_LONG_PRESS_EVENT_INTERVAL_MS));
+			const eventCount = this.longPressEventCounts.get(longPressKey) || 0;
+			this.longPressEventCounts.set(longPressKey, eventCount + 1);
+
+			if ((eventCount % eventsPerRepeat) !== 0)
 			{
 				return null;
 			}
@@ -2287,6 +2317,7 @@ class PanelDevice extends Device
 			// Record that the long press has finished
 			const longPressKey = `${parameters.connector}_${parameters.side}_${parameters.page}`;
 			this.longPressOccurred.set(longPressKey, 0);
+			this.longPressEventCounts.delete(longPressKey);
 			this.lastLongPressTimes.delete(longPressKey);
 		}
 	}
