@@ -25,6 +25,15 @@
 				"nl": "Pagina"
 			},
 			"example": "1"
+        },
+        {
+            "name": "repeatCount",
+            "type": "number",
+            "title": {
+                "en": "Number of repeats",
+                "nl": "Aantal herhalingen"
+            },
+            "example": "0 = first event, 1 = first repeat, etc."
 		}
     ],
     "args": [

@@ -227,6 +227,26 @@ class MyApp extends Homey.App
 						buttonConfiguration[page].rightLongRepeat = '30';
 					}
 
+					if (buttonConfiguration[page].leftLongDelayMs == null)
+					{
+						buttonConfiguration[page].leftLongDelayMs = '750';
+					}
+
+					if (buttonConfiguration[page].rightLongDelayMs == null)
+					{
+						buttonConfiguration[page].rightLongDelayMs = '750';
+					}
+
+					if (buttonConfiguration[page].leftLongRepeatMs == null)
+					{
+						buttonConfiguration[page].leftLongRepeatMs = '500';
+					}
+
+					if (buttonConfiguration[page].rightLongRepeatMs == null)
+					{
+						buttonConfiguration[page].rightLongRepeatMs = '500';
+					}
+
 					if (!buttonConfiguration[page].leftSVG)
 					{
 						buttonConfiguration[page].leftSVG = '';
@@ -1029,6 +1049,8 @@ class MyApp extends Homey.App
 				leftFrontLEDOffColor: '#000000',
 				leftWallLEDOffColor: '#000000',
 				leftCustomMQTTTopics: [],
+				leftLongDelayMs: '750',
+				leftLongRepeatMs: '500',
 				leftSVG: '',
 				rightTopText: '',
 				rightOnText: '',
@@ -1042,6 +1064,8 @@ class MyApp extends Homey.App
 				rightFrontLEDOffColor: '#000000',
 				rightWallLEDOffColor: '#000000',
 				rightCustomMQTTTopics: [],
+				rightLongDelayMs: '750',
+				rightLongRepeatMs: '500',
 				rightSVG: '',
 			};
 
@@ -2939,9 +2963,9 @@ class MyApp extends Homey.App
 		return this;
 	}
 
-	triggerConfigButton(device, left_right, display_button, configID, button_state, onoff, page)
+	triggerConfigButton(device, left_right, display_button, configID, button_state, onoff, page, repeatCount = 0)
 	{
-		const tokens = { state: onoff, page };
+		const tokens = { state: onoff, page, repeatCount };
 		const state = {
 			left_right,
 			displaybutton: ((display_button === 2) || (display_button === 3)) ? 'display' : 'button',
@@ -3063,8 +3087,14 @@ class MyApp extends Homey.App
 			button.id = buttonIdx;
 		}
 
-		button.longdelay = 75;
-		button.longrepeat = 50;
+		const side = (buttonIdx & 1) === 0 ? 'left' : 'right';
+		const pageConfiguration = Array.isArray(ButtonPanelConfiguration) ? (ButtonPanelConfiguration[page] || ButtonPanelConfiguration[0]) : ButtonPanelConfiguration;
+		const configuredLongDelayMs = parseInt(pageConfiguration && pageConfiguration[`${side}LongDelayMs`], 10);
+		const configuredLongRepeatMs = parseInt(pageConfiguration && pageConfiguration[`${side}LongRepeatMs`], 10);
+		const longDelayMs = Number.isNaN(configuredLongDelayMs) ? 750 : Math.max(0, Math.min(configuredLongDelayMs, 10000));
+		const longRepeatMs = Number.isNaN(configuredLongRepeatMs) ? 500 : Math.max(50, Math.min(configuredLongRepeatMs, 10000));
+		button.longdelay = Math.round(longDelayMs / 10);
+		button.longrepeat = Math.round(longRepeatMs / 10);
 
 		sectionConfiguration.buttons.push(button);
 

@@ -275,6 +275,8 @@ const DISPLAY_FONT_SIZE_LOOKUP = { 1: 18, 2: 35, 3: 45, 4: 66, 5: 100 };
 					const frontLEDOffColorElement = document.getElementById(`${side}${page}FrontLEDOffColor`);
 					const wallLEDOffColorElement = document.getElementById(`${side}${page}WallLEDOffColor`);
 					const longRepeatElement = document.getElementById(`${side}${page}DisableLongRepeat`);
+					const longDelayMsElement = document.getElementById(`${side}${page}LongDelayMs`);
+					const longRepeatMsElement = document.getElementById(`${side}${page}LongRepeatMs`);
 
 					if (topTextElement) pageConfig[`${side}TopText`] = topTextElement.value;
 					if (onTextElement) pageConfig[`${side}OnText`] = onTextElement.value;
@@ -301,7 +303,9 @@ const DISPLAY_FONT_SIZE_LOOKUP = { 1: 18, 2: 35, 3: 45, 4: 66, 5: 100 };
 					if (wallLEDOnColorElement) pageConfig[`${side}WallLEDOnColor`] = wallLEDOnColorElement.value;
 					if (frontLEDOffColorElement) pageConfig[`${side}FrontLEDOffColor`] = frontLEDOffColorElement.value;
 					if (wallLEDOffColorElement) pageConfig[`${side}WallLEDOffColor`] = wallLEDOffColorElement.value;
-					if (longRepeatElement) pageConfig[`${side}DisableLongRepeat`] = !!longRepeatElement.checked;
+					if (longRepeatElement) pageConfig[`${side}DisableLongRepeat`] = !longRepeatElement.checked;
+					if (longDelayMsElement) pageConfig[`${side}LongDelayMs`] = normalizeLongPressTimingMs(longDelayMsElement.value, 0, 750);
+					if (longRepeatMsElement) pageConfig[`${side}LongRepeatMs`] = normalizeLongPressTimingMs(longRepeatMsElement.value, 50, 500);
 				}
 			}
 		}
@@ -1825,6 +1829,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				var frontLEDOffColorElement = document.getElementById(`${side}${page}FrontLEDOffColor`);
 				var wallLEDOffColorElement = document.getElementById(`${side}${page}WallLEDOffColor`);
 				var longRepeatElement = document.getElementById(`${side}${page}DisableLongRepeat`);
+				var longDelayMsElement = document.getElementById(`${side}${page}LongDelayMs`);
+				var longRepeatMsElement = document.getElementById(`${side}${page}LongRepeatMs`);
 				var OnSVGElement = document.getElementById(`${side}${page}OnSVG`);
 				var OffSVGElement = document.getElementById(`${side}${page}OffSVG`);
 
@@ -1881,6 +1887,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				ButtonPanelConfiguration[`${side}FrontLEDOffColor`] = frontLEDOffColorElement.value;
 				ButtonPanelConfiguration[`${side}WallLEDOffColor`] = wallLEDOffColorElement.value;
 				ButtonPanelConfiguration[`${side}DisableLongRepeat`] = !longRepeatElement.checked;
+				ButtonPanelConfiguration[`${side}LongDelayMs`] = normalizeLongPressTimingMs(longDelayMsElement.value, 0, 750);
+				ButtonPanelConfiguration[`${side}LongRepeatMs`] = normalizeLongPressTimingMs(longRepeatMsElement.value, 50, 500);
 				ButtonPanelConfiguration[`${side}OnSVG`] = clampSVGField(OnSVGElement?.value || '');
 				ButtonPanelConfiguration[`${side}OffSVG`] = clampSVGField(OffSVGElement?.value || '');
 			};
@@ -3583,7 +3591,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			}
 
 			toggleElement.classList.toggle('is-open', detailElement.open);
-			toggleElement.title = detailElement.open ? 'Collapse Repeat / Broker' : 'Expand Repeat / Broker';
+			toggleElement.title = detailElement.open ? 'Collapse long press auto-repeat and broker settings' : 'Expand long press auto-repeat and broker settings';
 			toggleElement.setAttribute('aria-label', toggleElement.title);
 			toggleElement.setAttribute('aria-expanded', detailElement.open ? 'true' : 'false');
 		}
@@ -3621,12 +3629,16 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 		function getButtonInlineMainControlHtml(side, page)
 		{
 			const ctrlLabels = {
-				longRepeat: 'Repeat',
+				longRepeat: Homey.__("settings.longRepeat"),
+				longDelayMs: Homey.__("settings.longDelayMs"),
+				longRepeatMs: Homey.__("settings.longRepeatMs"),
 				brokerId: Homey.__("settings.brokerId"),
 			};
 
 			const ctrlExplanations = {
 				longRepeat: Homey.__("settings.longRepeatExplanation"),
+				longDelayMs: Homey.__("settings.longDelayMsExplanation"),
+				longRepeatMs: Homey.__("settings.longRepeatMsExplanation"),
 				brokerId: Homey.__("settings.brokerIdExplanation"),
 			};
 
@@ -3644,6 +3656,16 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 						</div>
 					</label>
 
+					<label class="homey-form-label" for="${side}${page}LongDelayMs"><span>${ctrlLabels.longDelayMs}</span>
+						<div class="tooltip"><i class="fi fi-rr-info"></i><span class="tooltiptext">${ctrlExplanations.longDelayMs}</span></div>
+					</label>
+					<input class="homey-form-input" id="${side}${page}LongDelayMs" type="number" min="0" max="10000" step="10" />
+
+					<label class="homey-form-label" for="${side}${page}LongRepeatMs"><span>${ctrlLabels.longRepeatMs}</span>
+						<div class="tooltip"><i class="fi fi-rr-info"></i><span class="tooltiptext">${ctrlExplanations.longRepeatMs}</span></div>
+					</label>
+					<input class="homey-form-input" id="${side}${page}LongRepeatMs" type="number" min="50" max="10000" step="10" />
+
 					<div id="${side}${page}BrokerIdDiv" class="button-inline-broker-control">
 						<label class="homey-form-label" for="${side}${page}BrokerId"><span>${ctrlLabels.brokerId}</span>
 							<div class="tooltip"><i class="fi fi-rr-info"></i>
@@ -3655,6 +3677,17 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					</div>
 				</div>
 			</div>`;
+		}
+
+		function normalizeLongPressTimingMs(value, minimum, defaultValue)
+		{
+			const parsedValue = Number(value);
+			if (!Number.isFinite(parsedValue))
+			{
+				return `${defaultValue}`;
+			}
+
+			return `${Math.max(minimum, Math.min(10000, Math.round(parsedValue / 10) * 10))}`;
 		}
 
 		function renderButtonMainPage()
@@ -6991,6 +7024,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				document.getElementById(`${side}${page}FrontLEDOffColor`).value = "#000000";
 				document.getElementById(`${side}${page}WallLEDOffColor`).value = "#000000";
 				document.getElementById(`${side}${page}DisableLongRepeat`).checked = true;
+				document.getElementById(`${side}${page}LongDelayMs`).value = "750";
+				document.getElementById(`${side}${page}LongRepeatMs`).value = "500";
 				document.getElementById(`${side}${page}OnSVG`).value = "";
 				document.getElementById(`${side}${page}OffSVG`).value = "";
 			}
@@ -7036,6 +7071,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				document.getElementById(`${side}${page}FrontLEDOffColor`).value = ButtonPanelConfiguration[`${side}FrontLEDOffColor`];
 				document.getElementById(`${side}${page}WallLEDOffColor`).value = ButtonPanelConfiguration[`${side}WallLEDOffColor`];
 				document.getElementById(`${side}${page}DisableLongRepeat`).checked = !ButtonPanelConfiguration[`${side}DisableLongRepeat`];
+				document.getElementById(`${side}${page}LongDelayMs`).value = ButtonPanelConfiguration[`${side}LongDelayMs`] ?? "750";
+				document.getElementById(`${side}${page}LongRepeatMs`).value = ButtonPanelConfiguration[`${side}LongRepeatMs`] ?? "500";
 				document.getElementById(`${side}${page}OnSVG`).value = ButtonPanelConfiguration[`${side}OnSVG`] || '';
 				document.getElementById(`${side}${page}OffSVG`).value = ButtonPanelConfiguration[`${side}OffSVG`] || '';
 			}
@@ -9522,7 +9559,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 									<div class="button-sim-bar button-inline-sim-grid" id="${page}ButtonInlineSimContent"></div>
 									</div>
 									<div class="button-inline-settings-toggle-row">
-										<button class="homey-button-secondary-shadow button-inline-settings-toggle" id="${page}ButtonInlineSettingsToggle" type="button" onClick="toggleButtonInlineSettingsSection(${page}); return false;" aria-expanded="false" title="Expand Repeat / Broker" aria-label="Expand Repeat / Broker"><span class="icon" style='font-size:22px;'>&#8628;</span></button>
+										<button class="homey-button-secondary-shadow button-inline-settings-toggle" id="${page}ButtonInlineSettingsToggle" type="button" onClick="toggleButtonInlineSettingsSection(${page}); return false;" aria-expanded="false" title="Expand long press auto-repeat and broker settings" aria-label="Expand long press auto-repeat and broker settings"><span>Auto-repeat / Broker</span><span class="icon" style='font-size:22px;'>&#8628;</span></button>
 									</div>
 									<details id="${page}ButtonInlineSettingsDetails" class="button-inline-settings-details" ontoggle="updateButtonInlineSettingsToggleState(${page})">
 										<summary class="button-inline-settings-summary">Repeat / Broker</summary>

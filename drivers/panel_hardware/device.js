@@ -19,6 +19,7 @@ class PanelDevice extends Device
 		//		this.setUnavailable('Device is initializing');
 		this.initFinished = false;
 		this.longPressOccurred = new Map();
+		this.lastLongPressTimes = new Map();
 		this.buttonValues = new Map();
 		this.capabilityDispatchInFlight = new Set();
 		this.barConfigured = [false, false, false, false, false, false, false, false];
@@ -563,6 +564,10 @@ class PanelDevice extends Device
 		if (this.longPressOccurred)
 		{
 			this.longPressOccurred.clear();
+		}
+		if (this.lastLongPressTimes)
+		{
+			this.lastLongPressTimes.clear();
 		}
 		if (this.buttonValues)
 		{
@@ -2155,24 +2160,28 @@ class PanelDevice extends Device
 
 	async processLongPressMessage(parameters)
 	{
-		if (this.lastLongPressTime && ((Date.now() - this.lastLongPressTime) < 500))
+		const longPressKey = `${parameters.connector}_${parameters.side}_${parameters.page}`;
+		const lastLongPressTime = this.lastLongPressTimes.get(longPressKey);
+		if (lastLongPressTime && ((Date.now() - lastLongPressTime) < 25))
 		{
 			// ignore long press messages that are too close together
 			return;
 		}
 
-		this.lastLongPressTime = Date.now();
-		let repeatCount = this.longPressOccurred.get(`${parameters.connector}_${parameters.side}_${parameters.page}`);
+		this.lastLongPressTimes.set(longPressKey, Date.now());
+		let repeatCount = this.longPressOccurred.get(longPressKey);
 		if (repeatCount === undefined)
 		{
 			repeatCount = 0;
 		}
 
 		let buttonPanelConfiguration = null;
+		let buttonPageConfiguration = null;
 		if ((parameters.configNo != null) && (parameters.connectorType !== 2) && (parameters.connectorType !== 3))
 		{
 			buttonPanelConfiguration = this.homey.app.buttonConfigurations[parameters.configNo];
-			if (buttonPanelConfiguration[`${parameters.side}DisableLongRepeat`] && (repeatCount > 0))
+			buttonPageConfiguration = buttonPanelConfiguration[parameters.page] || buttonPanelConfiguration[0] || {};
+			if (buttonPageConfiguration[`${parameters.side}DisableLongRepeat`] && (repeatCount > 0))
 			{
 				return null;
 			}
@@ -2183,28 +2192,21 @@ class PanelDevice extends Device
 			this.homey.app.updateLog(`Panel processing MQTT message: ${parameters}`);
 		}
 
-		this.longPressOccurred.set(`${parameters.connector}_${parameters.side}_${parameters.page}`, repeatCount + 1);
+		this.longPressOccurred.set(longPressKey, repeatCount + 1);
 		this.homey.app.triggerButtonLongPress(this, parameters.side === 'left', parameters.connector + 1, repeatCount, parameters.page);
 
 		if ((parameters.connectorType === 2) || (parameters.connectorType === 3))
 		{
 			// Display connector buttons: fire the configuration button trigger so long presses can start flows
-			if (repeatCount === 0)
-			{
-				const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`);
-				this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value, parameters.page);
-			}
+			const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`);
+			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value, parameters.page, repeatCount);
 		}
 		else if (buttonPanelConfiguration !== null)
 		{
 			const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`);
+			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value, parameters.page, repeatCount);
 
-			if (repeatCount === 0)
-			{
-				this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value, parameters.page);
-			}
-
-			const capability = parameters.side === 'left' ? buttonPanelConfiguration.leftCapability : buttonPanelConfiguration.rightCapability;
+			const capability = parameters.side === 'left' ? buttonPageConfiguration.leftCapability : buttonPageConfiguration.rightCapability;
 
 			if (capability === 'dim')
 			{
@@ -2283,7 +2285,9 @@ class PanelDevice extends Device
 		if (this.longPressOccurred)
 		{
 			// Record that the long press has finished
-			this.longPressOccurred.set(`${parameters.connector}_${parameters.side}_${parameters.page}`, 0);
+			const longPressKey = `${parameters.connector}_${parameters.side}_${parameters.page}`;
+			this.longPressOccurred.set(longPressKey, 0);
+			this.lastLongPressTimes.delete(longPressKey);
 		}
 	}
 

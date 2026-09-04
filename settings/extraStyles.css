@@ -755,12 +755,16 @@ summary::-webkit-details-marker {
 		}
 
 		.button-inline-settings-toggle {
-			width: 34px;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 6px;
+			width: auto;
 			min-width: 34px !important;
 			height: 28px;
 			min-height: 28px !important;
 			line-height: 1;
-			padding: 0 !important;
+			padding: 0 8px !important;
 		}
 
 		.button-inline-settings-details {
