@@ -3994,15 +3994,29 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			return `${safeButtonPageLabel}: ${safeCurrentPageLabel} / <span class="display-sim-total-pages">${nonDefaultPageCount}</span><span class="tooltip display-sim-total-pages-tooltip"><i class="fi fi-rr-info" aria-hidden="true"></i><span class="tooltiptext">${sharedPageHeaderHint}</span></span>`;
 		}
 
+		function getButtonPanelDimPreviewText(pageConfig, side, pageIndex)
+		{
+			const capabilityElement = document.getElementById(`${side}${pageIndex}Capability`);
+			const selectedOption = capabilityElement && capabilityElement.selectedOptions ? capabilityElement.selectedOptions[0] : null;
+			const rawValue = selectedOption ? parseFloat(selectedOption.dataset.value) : NaN;
+			const percent = Number.isNaN(rawValue) ? 50 : Math.round(rawValue * 100);
+
+			const dimChange = getLiveButtonPanelFieldValue(pageConfig, side, 'DimChange', '', pageIndex);
+			const direction = (typeof dimChange === 'string' && dimChange.indexOf('-') >= 0) ? '-' : '+';
+
+			return `${percent}% ${direction}`;
+		}
+
 		function getButtonPanelPreviewMarkup(pageConfig, side, pageIndex = buttonPagePopupCurrentPage)
 		{
 			const topText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'TopText', Homey.__(`settings.${side}Panel`), pageIndex));
+			const isDimCapability = (getLiveButtonPanelFieldValue(pageConfig, side, 'Capability', '', pageIndex) === 'dim');
 			const onText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'OnText', Homey.__('settings.labelOn'), pageIndex));
 			const offText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'OffText', Homey.__('settings.labelOff'), pageIndex));
-			const stateText = (buttonPagePopupLedState === 'on') ? onText : offText;
-			const textFieldSuffix = (buttonPagePopupLedState === 'on') ? 'OnText' : 'OffText';
+			const stateText = isDimCapability ? escapeHtml(getButtonPanelDimPreviewText(pageConfig, side, pageIndex)) : ((buttonPagePopupLedState === 'on') ? onText : offText);
+			const textFieldSuffix = isDimCapability ? 'DimChange' : ((buttonPagePopupLedState === 'on') ? 'OnText' : 'OffText');
 			const svgFieldSuffix = (buttonPagePopupLedState === 'on') ? 'OnSVG' : 'OffSVG';
-			const selectedSvgText = getLiveButtonPanelFieldValue(pageConfig, side, svgFieldSuffix, '', pageIndex);
+			const selectedSvgText = isDimCapability ? '' : getLiveButtonPanelFieldValue(pageConfig, side, svgFieldSuffix, '', pageIndex);
 			const svgMarkup = getButtonPanelPreviewSvg(selectedSvgText || '');
 			const ledMarkup = `<div class="button-sim-leds ${side === 'right' ? 'button-sim-leds-right' : ''}">${getButtonPanelLedMarkup(pageConfig, side, pageIndex)}</div>`;
 			const contentMarkup = svgMarkup
@@ -4234,6 +4248,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				OffText: Homey.__('settings.labelOff'),
 				OnSVG: 'On SVG Data',
 				OffSVG: 'Off SVG Data',
+				DimChange: Homey.__('settings.dimChange'),
 				FrontLEDOnColor: Homey.__('settings.frontLEDOnColor'),
 				WallLEDOnColor: Homey.__('settings.wallLEDOnColor'),
 				FrontLEDOffColor: Homey.__('settings.frontLEDOffColor'),
@@ -4247,12 +4262,13 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				OffText: 'settings.labelOffExplanation',
 				OnSVG: 'settings.textExplanation',
 				OffSVG: 'settings.textExplanation',
+				DimChange: 'settings.dimChangeExplanation',
 				FrontLEDOnColor: 'settings.frontLEDOnColorExplanation',
 				WallLEDOnColor: 'settings.wallLEDOnColorExplanation',
 				FrontLEDOffColor: 'settings.frontLEDOffColorExplanation',
 				WallLEDOffColor: 'settings.wallLEDOffColorExplanation',
 			};
-			const textAndSvgFields = ['Device', 'Capability', 'OnText', 'OffText', 'OnSVG', 'OffSVG'];
+			const textAndSvgFields = ['Device', 'Capability', 'OnText', 'OffText', 'OnSVG', 'OffSVG', 'DimChange'];
 
 			if (fieldSuffix === 'TopText')
 			{
@@ -4285,6 +4301,16 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			}
 
 			if (fieldSuffix === 'OnSVG' || fieldSuffix === 'OffSVG')
+			{
+				return {
+					title: `${sideLabel} - ${Homey.__('settings.text')}`,
+					fields: textAndSvgFields,
+					labels,
+					tooltipKeys,
+				};
+			}
+
+			if (fieldSuffix === 'DimChange')
 			{
 				return {
 					title: `${sideLabel} - ${Homey.__('settings.text')}`,
@@ -4373,6 +4399,24 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				capabilityLabelElement.innerHTML = '';
 				appendPopupLabelContent(capabilityLabelElement, capabilityLabelText, capabilityTooltipText);
 			}
+
+			// Dim buttons show their level and direction on the display instead, so the On/Off text and icon fields don't apply
+			const isDimCapability = (capabilityElement.value === 'dim');
+			for (const suffix of ['OnText', 'OffText', 'OnSVG', 'OffSVG'])
+			{
+				const fieldElement = popupElementsBySuffix[suffix];
+				const fieldRowElement = fieldElement ? fieldElement.closest('.button-field-popup-field') : null;
+				if (fieldRowElement)
+				{
+					fieldRowElement.style.display = isDimCapability ? 'none' : '';
+				}
+			}
+
+			const dimChangeRowElement = popupElementsBySuffix.DimChange ? popupElementsBySuffix.DimChange.closest('.button-field-popup-field') : null;
+			if (dimChangeRowElement)
+			{
+				dimChangeRowElement.style.display = isDimCapability ? '' : 'none';
+			}
 		}
 
 		function restoreButtonFieldPopupCustomMQTTSection()
@@ -4420,7 +4464,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				return '';
 			}
 
-			return (tooltipTextElement.textContent || '').trim();
+			return (tooltipTextElement.innerHTML || '').trim();
 		}
 
 		function getLocalizedTooltipText(localizationKey)
@@ -4476,7 +4520,8 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 			const tooltipTextElement = document.createElement('span');
 			tooltipTextElement.className = 'tooltiptext';
-			tooltipTextElement.textContent = tooltipText;
+			// Tooltip strings use <br> for line breaks (like every other tooltip in this app), so render as HTML
+			tooltipTextElement.innerHTML = tooltipText;
 			tooltipElement.appendChild(tooltipTextElement);
 
 			labelElement.appendChild(tooltipElement);
@@ -4770,6 +4815,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					{
 						updatePopupCapabilityIndicator(popupElementsBySuffix.Capability, popupCapabilityIndicatorElement);
 					}
+					updateButtonFieldPopupCapabilityState(popupElementsBySuffix);
 				});
 
 				syncButtonFieldPopupCapabilityOptions(side, page, popupElementsBySuffix.Capability, popupElementsBySuffix.Capability.value);
@@ -6898,6 +6944,11 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 							{
 								option.dataset.iconUrl = capabilityIconUrl;
 							}
+							if (capabilityId === 'dim' && (typeof capability.value === 'number'))
+							{
+								// Let the button simulator preview the current dim level
+								option.dataset.value = String(capability.value);
+							}
 							capabilityElement.add(option);
 							addedCapabilityIds.add(capabilityId);
 						}
@@ -6949,6 +7000,11 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			//document.getElementById(`${side}TopText`).value = document.getElementById(`${side}TopText`).value ? document.getElementById(`${side}TopText`).value : value;
 			hidePopupManagedFieldsForSection(side, page);
 
+			renderInlineButtonPagePreview(page);
+			if (buttonPagePopupOverlayElement && buttonPagePopupOverlayElement.classList.contains('visible'))
+			{
+				renderButtonPagePopup();
+			}
 		}
 
 		// If the config and devices have been fetched, update all the control values

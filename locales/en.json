@@ -29,7 +29,7 @@
         "deviceExplanation": "Select the device to control when you press the Button+ button.<br>Only devices with On/Off or Dim capabilities will be shown.<br>If you select none, then nothing is directly controlled but you will still get the button pressed Flow trigger",
         "deviceDExplanation": "Select the required device or the variable option and then choose the item or variable in the Capability drop list to show on the display",
         "capability": "Capability",
-        "capabilityExplanation": "Select the capability to show in the button display. If the capability is read-only or it is a variable, such as an alarm, the button will not toggle the state but the flow triggers will still work<br>",
+        "capabilityExplanation": "Select the capability to show in the button display.<br>If the capability is read-only or it is a variable, such as an alarm, the button will not toggle the state but the flow triggers will still work.<br>If the capability is dim, the LED state will be driven by the on/off value and the light can be toggled on / off by double clicking the button. Toggle betwen + and - by clicking the button.",
         "capabilityDExplanation": "Select the capability or variable to show on the display. The contents of the drop list will depend on the Device you selected above.",
         "save": "Save All Configurations",
         "saved": "Configurations have been saved",
@@ -212,7 +212,8 @@
         "unsavedSettingsRestored": "Unsaved settings were restored.",
 		"getListeners": "Get Listeners",
 		"sentLog": "Sent Config Log",
-		"getLog": "Get Config Log"
+		"getLog": "Get Config Log",
+		"dimValueExplanation": "Specifies how much the dim button changes the brightness level on each repeat of the long press"
 	},
     "pair": {
         "manual_add":{

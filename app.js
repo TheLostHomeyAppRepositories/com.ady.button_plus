@@ -157,7 +157,7 @@ class MyApp extends Homey.App
 
 					if (!buttonConfiguration[page].leftDimChange)
 					{
-						buttonConfiguration[page].leftDimChange = '-10';
+						buttonConfiguration[page].leftDimChange = '+10';
 					}
 
 					if (!buttonConfiguration[page].rightDimChange)
@@ -1047,7 +1047,7 @@ class MyApp extends Homey.App
 				leftDevice: 'none',
 				leftCapability: '',
 				leftBrokerId: 'Default',
-				leftDimChange: '-10',
+				leftDimChange: '+10',
 				leftFrontLEDOnColor: '#ff0000',
 				leftWallLEDOnColor: '#ff0000',
 				leftFrontLEDOffColor: '#000000',

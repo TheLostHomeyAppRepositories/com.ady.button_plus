@@ -1796,7 +1796,10 @@ class PanelDevice extends Device
 
 		if (this.capabilityDispatchInFlight.has(key))
 		{
-			this.homey.app.updateLog(`Blocked recursive capability dispatch ${key} from ${sourceLabel}`, 0);
+			// Repeated dim adjustments during a long press can legitimately overlap while a slow device (e.g. Z-Wave)
+			// is still acknowledging the previous change; that's expected, not a sign of a recursive loop
+			const isExpectedDimOverlap = (capabilityName === 'dim') && (sourceLabel === 'processClickMessage:dim');
+			this.homey.app.updateLog(`Blocked recursive capability dispatch ${key} from ${sourceLabel}`, isExpectedDimOverlap ? 1 : 0);
 			return false;
 		}
 
@@ -2087,6 +2090,22 @@ class PanelDevice extends Device
 		this.clickEventTimers.set(key, timer);
 	}
 
+	async getDimButtonLedState(config)
+	{
+		const device = await this.homey.app.getHomeyDeviceById(config.deviceID);
+		if (device)
+		{
+			const onoffCapability = await this.homey.app.getHomeyCapabilityByName(device, 'onoff');
+			if (onoffCapability)
+			{
+				return Boolean(onoffCapability.value);
+			}
+		}
+
+		const dimCapability = device ? await this.homey.app.getHomeyCapabilityByName(device, 'dim') : null;
+		return !!(dimCapability && dimCapability.value > 0);
+	}
+
 	async refreshDimButtonDisplay(parameters, config, key)
 	{
 		const { capability } = await this.getDeviceAndCapability(config);
@@ -2095,6 +2114,10 @@ class PanelDevice extends Device
 
 		const buttonIdx = parameters.connector * 2 + (parameters.side === 'left' ? 0 : 1) + 1;
 		this.publishDimButtonLabel(config.brokerId, buttonIdx, parameters.page, percent, direction);
+
+		// Dim buttons have no on/off value of their own, so drive the LED from the target device's onoff state
+		const ledState = await this.getDimButtonLedState(config);
+		this.setLEDOnOff(config, null, buttonIdx, parameters.page, ledState);
 	}
 
 	async handleDimButtonRelease(parameters, config, key)
@@ -2344,7 +2367,7 @@ class PanelDevice extends Device
 
 		this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'clicked', value.toString(), parameters.page);
 
-		if (config)
+		if (config && (config.capabilityName !== 'dim'))
 		{
 			let buttonIdx = parameters.idx;
 			buttonIdx++;
@@ -2909,7 +2932,7 @@ class PanelDevice extends Device
 		this.checkStateChangeForDisplay(configNo, deviceId, capability, value);
 	}
 
-	checkStateChangeForConnector(connector, deviceId, capability, value)
+	async checkStateChangeForConnector(connector, deviceId, capability, value)
 	{
 		// Get the configuration for this connector
 		const configNo = this.getCapabilityValue(`configuration_button.connector${connector}`);
@@ -2935,7 +2958,10 @@ class PanelDevice extends Device
 			for (let i = 0; i < 2; i++)
 			{
 				const config = this.getConfigPageSide(null, page, side, configNo);
-				if ((config.deviceID === deviceId) && (config.capabilityName === capability))
+				const isConfiguredCapabilityMatch = (config.deviceID === deviceId) && (config.capabilityName === capability);
+				// Dim buttons have no on/off value of their own, so also react to the target device's onoff changes to drive the LED
+				const isDimOnOffFollow = (config.deviceID === deviceId) && (config.capabilityName === 'dim') && (capability === 'onoff');
+				if (isConfiguredCapabilityMatch || isDimOnOffFollow)
 				{
 					let buttonIdx = connector * 2 + (side === 'left' ? 0 : 1);
 					buttonIdx += 1;
@@ -2979,7 +3005,7 @@ class PanelDevice extends Device
 							this.homey.app.publishMQTTMessage(config.brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, value ? config.onSVG : config.offSVG).catch((err) => this.error(err));
 						}
 					}
-					else
+					else if (capability === 'dim')
 					{
 						// Dim capability: show the current level and toggled brighten/darken direction on the button
 						const dimKey = this.getDimButtonKey(connector, side, page);
@@ -2987,8 +3013,18 @@ class PanelDevice extends Device
 						this.publishDimButtonLabel(config.brokerId, buttonIdx, page, value, direction);
 					}
 
-					// Add the front and wall colours or the on/off state to the message queue based on the on/off value and firmware version
-					this.setLEDOnOff(config, null, buttonIdx, page, value);
+					// Dim buttons have no on/off value of their own, so drive the LED from the target device's onoff state
+					if (config.capabilityName === 'dim')
+					{
+						// eslint-disable-next-line no-await-in-loop
+						const ledState = await this.getDimButtonLedState(config);
+						this.setLEDOnOff(config, null, buttonIdx, page, ledState);
+					}
+					else
+					{
+						// Add the front and wall colours or the on/off state to the message queue based on the on/off value and firmware version
+						this.setLEDOnOff(config, null, buttonIdx, page, value);
+					}
 				}
 
 				side = 'right';
@@ -3208,6 +3244,11 @@ class PanelDevice extends Device
 				if (capability)
 				{
 					this.homey.app.registerDeviceCapabilityStateChange(device, sideConfig.capabilityName);
+					if (sideConfig.capabilityName === 'dim')
+					{
+						// Dim buttons have no on/off value of their own, so also listen for onoff changes to drive the LED
+						this.homey.app.registerDeviceCapabilityStateChange(device, 'onoff');
+					}
 					value = capability.value;
 					if (sideConfig.capabilityName === 'dim')
 					{
@@ -3251,7 +3292,8 @@ class PanelDevice extends Device
 		}
 
 		// Add the front and wall colours or the on/off state to the message queue based on the on/off value and firmware version
-		this.setLEDOnOff(sideConfig, mqttQueue, buttonIdx, page, value);
+		const ledValue = (sideConfig.capabilityName === 'dim') ? await this.getDimButtonLedState(sideConfig) : value;
+		this.setLEDOnOff(sideConfig, mqttQueue, buttonIdx, page, ledValue);
 
 		// Send the value to the device after a short delay to allow the device to connect to the broker
 		mqttQueue.push(
