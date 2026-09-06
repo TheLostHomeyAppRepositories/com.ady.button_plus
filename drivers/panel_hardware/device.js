@@ -9,7 +9,7 @@ const { checkSEMVerGreaterOrEqual } = require('../../lib/HttpHelper');
 const { isSvgTextContent } = require('../../lib/SvgHelper');
 
 const V3_LONG_PRESS_EVENT_INTERVAL_MS = 20;
-const DIM_DOUBLE_CLICK_WINDOW_MS = 350;
+const DOUBLE_CLICK_WINDOW_MS = 350;
 
 class PanelDevice extends Device
 {
@@ -28,6 +28,7 @@ class PanelDevice extends Device
 		this.dimDirections = new Map();
 		this.dimClickTimers = new Map();
 		this.dimToggleValues = new Map();
+		this.clickEventTimers = new Map();
 		this.capabilityDispatchInFlight = new Set();
 		this.barConfigured = [false, false, false, false, false, false, false, false];
 		this.page = 1;
@@ -599,6 +600,14 @@ class PanelDevice extends Device
 		if (this.dimToggleValues)
 		{
 			this.dimToggleValues.clear();
+		}
+		if (this.clickEventTimers)
+		{
+			for (const timer of this.clickEventTimers.values())
+			{
+				this.homey.clearTimeout(timer);
+			}
+			this.clickEventTimers.clear();
 		}
 
 		await super.onDeleted();
@@ -2051,6 +2060,33 @@ class PanelDevice extends Device
 		this.homey.app.publishMQTTMessage(brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, '').catch(this.error);
 	}
 
+	handleGenericDoubleClick(parameters, key)
+	{
+		const pendingTimer = this.clickEventTimers.get(key);
+		if (pendingTimer)
+		{
+			// Second click arrived within the double click window, so fire the double click Flow triggers
+			this.homey.clearTimeout(pendingTimer);
+			this.clickEventTimers.delete(key);
+
+			const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`) || false;
+			this.homey.app.triggerButtonEvent(this, parameters.side, parameters.connector, 'double', value.toString(), 0);
+			if (parameters.configNo != null)
+			{
+				this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'double', value.toString(), parameters.page);
+			}
+			return;
+		}
+
+		// Wait to see if a second click follows before giving up on this being a double click
+		const timer = this.homey.setTimeout(() =>
+		{
+			this.clickEventTimers.delete(key);
+		}, DOUBLE_CLICK_WINDOW_MS);
+
+		this.clickEventTimers.set(key, timer);
+	}
+
 	async refreshDimButtonDisplay(parameters, config, key)
 	{
 		const { capability } = await this.getDeviceAndCapability(config);
@@ -2078,7 +2114,7 @@ class PanelDevice extends Device
 		{
 			this.dimClickTimers.delete(key);
 			this.toggleDimDirection(parameters, config, key).catch((err) => this.error(err));
-		}, DIM_DOUBLE_CLICK_WINDOW_MS);
+		}, DOUBLE_CLICK_WINDOW_MS);
 
 		this.dimClickTimers.set(key, timer);
 		return null;
@@ -2425,6 +2461,13 @@ class PanelDevice extends Device
 		buttonIdx++;
 
 		this.homey.app.triggerButtonRelease(this, parameters.side === 'left', parameters.connector + 1, parameters.page);
+
+		const releaseKey = `${parameters.connector}_${parameters.side}_${parameters.page}`;
+		if (!(this.longPressOccurred && (this.longPressOccurred.get(releaseKey) > 0)))
+		{
+			// Only a plain click (no long press) can be part of a double click
+			this.handleGenericDoubleClick(parameters, releaseKey);
+		}
 
 		const config = this.getConfigPageSide(null, parameters.page, parameters.side, parameters.configNo);
 

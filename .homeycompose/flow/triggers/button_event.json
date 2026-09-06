@@ -93,6 +93,10 @@
                 {
                     "id": "long",
                     "title": {"en": "Long Pressed","nl": "Lang ingedrukt"}
+                },
+                {
+                    "id": "double",
+                    "title": {"en": "Double Clicked","nl": "Dubbel ingedrukt"}
                 }
             ]
         },
