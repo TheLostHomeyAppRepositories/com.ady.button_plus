@@ -137,7 +137,7 @@
           "en": "The [[left_right]] Button on connector [[connector]] for page [[page]] was turned On or off",
           "nl": "De [[left_right]] knop op connector [[connector]] voor pagina [[page]] is AAN of UIT gezet"
         },
-        "highlight": true,
+        "deprecated": true,
         "tokens": [
           {
             "name": "left_right",
@@ -261,6 +261,127 @@
       },
       {
         "title": {
+          "en": "A button event occurred",
+          "nl": "Een knop gebeurtenis heeft plaatsgevonden"
+        },
+        "titleFormatted": {
+          "en": "The [[left_right]] button on connector [[connector]] was [[state]]",
+          "nl": "De [[left_right]] knop op connector [[connector]] was [[state]]"
+        },
+        "highlight": true,
+        "tokens": [
+          {
+            "name": "value",
+            "type": "string",
+            "title": {
+              "en": "Value",
+              "nl": "Waarde"
+            },
+            "example": "true"
+          },
+          {
+            "name": "repeatCount",
+            "type": "number",
+            "title": {
+              "en": "Number of repeats",
+              "nl": "Aantal herhalingen"
+            },
+            "example": "0 = first event, 1 = first repeat, etc."
+          }
+        ],
+        "args": [
+          {
+            "type": "dropdown",
+            "name": "left_right",
+            "title": {
+              "en": "Left / Right",
+              "nl": "Links / Rechts"
+            },
+            "placeholder": {
+              "en": "Left / Right",
+              "nl": "Links / Rechts"
+            },
+            "values": [
+              {
+                "id": "left",
+                "title": {
+                  "en": "Left",
+                  "nl": "Links"
+                }
+              },
+              {
+                "id": "right",
+                "title": {
+                  "en": "Right",
+                  "nl": "Rechts"
+                }
+              }
+            ]
+          },
+          {
+            "type": "number",
+            "name": "connector",
+            "title": {
+              "en": "Connectore Number",
+              "nl": "Connector nummer"
+            },
+            "hint": {
+              "en": "The connector number (1-4). Use 0 for any connector.",
+              "nl": "Het connector nummer (1-4). Gebruik 0 voor elke connector."
+            },
+            "placeholder": {
+              "en": "Connector number",
+              "nl": "Connector nummer"
+            },
+            "min": 0,
+            "max": 4,
+            "step": 1
+          },
+          {
+            "type": "dropdown",
+            "name": "state",
+            "title": {
+              "en": "State",
+              "nl": "Status"
+            },
+            "placeholder": {
+              "en": "Clicked / Released / Long Pressed",
+              "nl": "Ingedrukt / Losgelaten / Lang ingedrukt"
+            },
+            "values": [
+              {
+                "id": "clicked",
+                "title": {
+                  "en": "Clicked",
+                  "nl": "Ingedrukt"
+                }
+              },
+              {
+                "id": "released",
+                "title": {
+                  "en": "Released",
+                  "nl": "Losgelaten"
+                }
+              },
+              {
+                "id": "long",
+                "title": {
+                  "en": "Long Pressed",
+                  "nl": "Lang ingedrukt"
+                }
+              }
+            ]
+          },
+          {
+            "name": "device",
+            "type": "device",
+            "filter": "driver_id=panel_hardware"
+          }
+        ],
+        "id": "button_event"
+      },
+      {
+        "title": {
           "en": "A button was pressed for a long time",
           "nl": "Een knop is ingedrukt gehouden"
         },
@@ -268,7 +389,7 @@
           "en": "The [[left_right]] Button on connector [[connector]] for page [[page]] was pressed for a long time",
           "nl": "De [[left_right]] knop op connector [[connector]] voor pagina [[page]] is ingedrukt gehouden"
         },
-        "highlight": true,
+        "deprecated": true,
         "tokens": [
           {
             "name": "left_right",
@@ -399,6 +520,7 @@
           "en": "The [[left_right]] Button on connector [[connector]] for page [[page]] was turned off",
           "nl": "De [[left_right]] knop op connector [[connector]] voor pagina [[page]] is uit gezet"
         },
+        "deprecated": true,
         "tokens": [
           {
             "name": "left_right",
@@ -520,6 +642,7 @@
           "en": "The [[left_right]] Button on connector [[connector]] for page [[page]] was turned on",
           "nl": "De [[left_right]] knop op [[connector]] voor pagina [[page]] is aan gezet"
         },
+        "deprecated": true,
         "tokens": [
           {
             "name": "left_right",
@@ -641,6 +764,7 @@
           "en": "The [[left_right]] button on connector [[connector]] for page [[page]] was released",
           "nl": "De [[left_right]] knop op connector [[connector]] voor pagina [[page]] is los gelaten"
         },
+        "deprecated": true,
         "tokens": [
           {
             "name": "left_right",
@@ -759,13 +883,13 @@
           "nl": "Een configuratiebutton is van status veranderd"
         },
         "titleFormatted": {
-          "en": "The [[left_right]] Button on [[display_button]] configuration [[config]] was [[state]]",
-          "nl": "De [[left_right]] knop op [[display_button]] configuratie [[config]] was [[state]]"
+          "en": "The [[left_right]] Button on [[display_button]] configuration [[config]] for [[page]] was [[state]]",
+          "nl": "De [[left_right]] knop op [[display_button]] configuratie [[config]] voor [[page]] was [[state]]"
         },
         "tokens": [
           {
             "name": "state",
-            "type": "boolean",
+            "type": "string",
             "title": {
               "en": "State",
               "nl": "Status"
@@ -865,6 +989,23 @@
             "step": 1
           },
           {
+            "type": "autocomplete",
+            "name": "page",
+            "required": false,
+            "title": {
+              "en": "Page",
+              "nl": "Pagina"
+            },
+            "hint": {
+              "en": "Choose a page, or All for any page.",
+              "nl": "Kies een pagina, of Alle voor elke pagina."
+            },
+            "placeholder": {
+              "en": "All",
+              "nl": "Alle"
+            }
+          },
+          {
             "type": "dropdown",
             "name": "state",
             "title": {
@@ -909,17 +1050,18 @@
       },
       {
         "title": {
-          "en": "A configuration button changed state",
-          "nl": "Een configuratie knop is van satus gewisseld"
+          "en": "A configuration button event occurred",
+          "nl": "Een configuratie knop gebeurtenis heeft plaatsgevonden"
         },
         "titleFormatted": {
-          "en": "The [[left_right]] Button on [[display_button]] configuration [[config]] was [[state]]",
-          "nl": "De [[left_right]] knop op [[display_button]] configuratie [[config]] was [[state]]"
+          "en": "The [[left_right]] Button on [[display_button]] configuration [[config]] for [[page]] was [[state]]",
+          "nl": "De [[left_right]] knop op [[display_button]] configuratie [[config]] voor [[page]] was [[state]]"
         },
+        "highlight": true,
         "tokens": [
           {
             "name": "state",
-            "type": "boolean",
+            "type": "string",
             "title": {
               "en": "State",
               "nl": "Status"
@@ -1019,6 +1161,23 @@
             }
           },
           {
+            "type": "autocomplete",
+            "name": "page",
+            "required": false,
+            "title": {
+              "en": "Page",
+              "nl": "Pagina"
+            },
+            "hint": {
+              "en": "Choose a page, or All for any page.",
+              "nl": "Kies een pagina, of Alle voor elke pagina."
+            },
+            "placeholder": {
+              "en": "All",
+              "nl": "Alle"
+            }
+          },
+          {
             "type": "dropdown",
             "name": "state",
             "title": {
@@ -1026,8 +1185,8 @@
               "nl": "Status"
             },
             "placeholder": {
-              "en": "Clicked / Released / Short Pressed / Long Pressed",
-              "nl": "Ingedrukt / Losgelaten / Kort ingedrukt / Lang ingedrukt"
+              "en": "Clicked / Released / Long Pressed",
+              "nl": "Ingedrukt / Losgelaten / Lang ingedrukt"
             },
             "values": [
               {

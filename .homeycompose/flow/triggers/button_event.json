@@ -1,0 +1,105 @@
+{
+    "title": {
+        "en": "A button event occurred",
+        "nl": "Een knop gebeurtenis heeft plaatsgevonden"
+    },
+    "titleFormatted": {
+        "en": "The [[left_right]] button on connector [[connector]] was [[state]]",
+        "nl": "De [[left_right]] knop op connector [[connector]] was [[state]]"
+    },
+	"highlight": true,
+    "tokens": [
+        {
+            "name": "value",
+            "type": "string",
+            "title": {
+                "en": "Value",
+                "nl": "Waarde"
+            },
+            "example": "true"
+        },
+        {
+            "name": "repeatCount",
+            "type": "number",
+            "title": {
+                "en": "Number of repeats",
+                "nl": "Aantal herhalingen"
+            },
+            "example": "0 = first event, 1 = first repeat, etc."
+		}
+    ],
+    "args": [
+        {
+            "type": "dropdown",
+            "name": "left_right",
+            "title": {
+                "en": "Left / Right",
+                "nl": "Links / Rechts"
+            },
+            "placeholder": {
+                "en": "Left / Right",
+                "nl": "Links / Rechts"
+            },
+            "values": [
+                {
+                    "id": "left",
+                    "title": {"en": "Left","nl": "Links"}
+                },
+                {
+                    "id": "right",
+                    "title": {"en": "Right","nl": "Rechts"}
+                }
+            ]
+        },
+		{
+			"type": "number",
+			"name": "connector",
+			"title": {
+				"en": "Connectore Number",
+				"nl": "Connector nummer"
+			},
+			"hint": {
+				"en": "The connector number (1-4). Use 0 for any connector.",
+				"nl": "Het connector nummer (1-4). Gebruik 0 voor elke connector."
+			},
+			"placeholder": {
+				"en": "Connector number",
+				"nl": "Connector nummer"
+			},
+			"min": 0,
+			"max": 4,
+			"step": 1
+		},
+		{
+            "type": "dropdown",
+            "name": "state",
+            "title": {
+                "en": "State",
+                "nl": "Status"
+            },
+            "placeholder": {
+                "en": "Clicked / Released / Long Pressed",
+                "nl": "Ingedrukt / Losgelaten / Lang ingedrukt"
+            },
+            "values": [
+                {
+                    "id": "clicked",
+                    "title": {"en": "Clicked","nl": "Ingedrukt"}
+                },
+                {
+                    "id": "released",
+                    "title": {"en": "Released","nl": "Losgelaten"}
+                },
+                {
+                    "id": "long",
+                    "title": {"en": "Long Pressed","nl": "Lang ingedrukt"}
+                }
+            ]
+        },
+        {
+            "name": "device",
+            "type": "device",
+            "filter": "driver_id=panel_hardware"
+        }
+    ]
+}

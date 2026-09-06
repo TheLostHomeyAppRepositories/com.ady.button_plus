@@ -436,27 +436,31 @@ class MyApp extends Homey.App
 		this.triggerConfigButtonChanged = this.homey.flow.getDeviceTriggerCard('config_button_change')
 			.registerRunListener((args, state) =>
 			{
-				return ((args.left_right === state.left_right) && (args.config === state.config) && (args.display_button === state.displaybutton) && (args.state === state.state));
+				const page = this.getFlowPageId(args.page);
+				return ((args.left_right === state.left_right) && (args.config === state.config) && (args.display_button === state.display_button) && (args.state === state.state) && ((page == null) || (page === -1) || (page === state.page)));
+			})
+			.registerArgumentAutocompleteListener('page', async (query, args) =>
+			{
+				return this.getConfigurationPageOptions(query, args);
 			});
 
 		this.triggerConfigButtonNameChanged = this.homey.flow.getDeviceTriggerCard('config_name_button_change')
 			.registerRunListener((args, state) =>
 			{
-				return ((args.left_right === state.left_right) && (args.config.id === state.config) && (args.display_button === state.displaybutton) && (args.state === state.state));
+				const page = this.getFlowPageId(args.page);
+				return ((args.left_right === state.left_right) && (args.config.id === state.config) && (args.display_button === state.display_button) && (args.state === state.state) && ((page == null) || (page === -1) || (page === state.page)));
 			})
-			.registerArgumentAutocompleteListener('config', async (query, args) =>
+			.registerArgumentAutocompleteListener('page', async (query, args) =>
 			{
-				// iterate over the config array and return the name and id
-				let configurations = this.buttonConfigurations;
-				if (args.display_button === 'display')
-				{
-					configurations = this.displayConfigurations;
-				}
-				const results = configurations.map((config, index) => ({ name: `Configuration ${index + 1} ${config.name ? config.name : ''}`, id: index }));
-
-				// filter the results based on the search query
-				return results.filter((result) => (result.name.toLowerCase().includes(query.toLowerCase())));
+				return this.getConfigurationPageOptions(query, args);
 			});
+
+		this._triggerButtonEvent = this.homey.flow.getDeviceTriggerCard('button_event')
+			.registerRunListener((args, state) =>
+			{
+				return ((args.left_right === state.left_right) && (args.connector === state.connector) && (args.state === state.state));
+			})
+
 
 		// This trigger is deprecated as it is replaced by the switch_button_configuration_name trigger
 		this.homey.flow.getActionCard('switch_button_configuration')
@@ -2963,19 +2967,69 @@ class MyApp extends Homey.App
 		return this;
 	}
 
-	triggerConfigButton(device, left_right, display_button, configID, button_state, onoff, page, repeatCount = 0)
+	triggerConfigButton(device, left_right, display_button, configID, button_state, value, page, repeatCount = 0)
 	{
-		const tokens = { state: onoff, page, repeatCount };
+		const tokens = { state: value, page: page, repeatCount };
 		const state = {
 			left_right,
-			displaybutton: ((display_button === 2) || (display_button === 3)) ? 'display' : 'button',
+			display_button: ((display_button === 2) || (display_button === 3)) ? 'display' : 'button',
 			config: parseInt(configID, 10) + 1,
+			page,
 			state: button_state,
 		};
 		this.triggerFlow(this.triggerConfigButtonChanged, device, tokens, state);
 		state.config = parseInt(configID, 10);
 		this.triggerFlow(this.triggerConfigButtonNameChanged, device, tokens, state);
 		return this;
+	}
+
+	triggerButtonEvent(device, left_right, connector, button_state, value, repeatCount = 0)
+	{
+		const tokens = { value, repeatCount };
+		const state = {
+			left_right,
+			connector,
+			state: button_state,
+		};
+
+		this.triggerFlow(this._triggerButtonEvent, device, tokens, state);
+		return this;
+	}
+
+	getFlowPageId(page)
+	{
+		if ((page == null) || (page === ''))
+		{
+			return -1;
+		}
+
+		const id = typeof page === 'object' ? page.id : page;
+		const pageId = parseInt(id, 10);
+		return Number.isNaN(pageId) ? -1 : pageId;
+	}
+
+	getConfigurationPageOptions(query, args)
+	{
+		let pageCount = 1;
+		const configId = args.config && (typeof args.config === 'object') ? args.config.id : args.config;
+		const configNo = parseInt(configId, 10) - (typeof args.config === 'object' ? 0 : 1);
+		if (!Number.isNaN(configNo) && (configNo >= 0))
+		{
+			const configurations = args.display_button === 'display' ? this.displayConfigurations : this.buttonConfigurations;
+			const configuration = configurations && configurations[configNo];
+			if (Array.isArray(configuration) && (configuration.length > 0))
+			{
+				pageCount = configuration.length;
+			}
+		}
+
+		const results = [{ name: 'All', id: -1 }];
+		for (let page = 1; page < pageCount; page++)
+		{
+			results.push({ name: `Page ${page}`, id: page });
+		}
+
+		return results.filter((result) => result.name.toLowerCase().includes(query.toLowerCase()));
 	}
 
 	/**

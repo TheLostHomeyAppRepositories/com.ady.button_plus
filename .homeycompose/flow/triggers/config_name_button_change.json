@@ -1,16 +1,17 @@
 {
     "title": {
-        "en": "A configuration button changed state",
-        "nl": "Een configuratie knop is van satus gewisseld"
+        "en": "A configuration button event occurred",
+        "nl": "Een configuratie knop gebeurtenis heeft plaatsgevonden"
     },
     "titleFormatted": {
-        "en": "The [[left_right]] Button on [[display_button]] configuration [[config]] was [[state]]",
-        "nl": "De [[left_right]] knop op [[display_button]] configuratie [[config]] was [[state]]"
+        "en": "The [[left_right]] Button on [[display_button]] configuration [[config]] for [[page]] was [[state]]",
+        "nl": "De [[left_right]] knop op [[display_button]] configuratie [[config]] voor [[page]] was [[state]]"
     },
+	"highlight": true,
     "tokens": [
         {
             "name": "state",
-            "type": "boolean",
+            "type": "string",
             "title": {
                 "en": "State",
                 "nl": "Status"
@@ -98,6 +99,23 @@
             }
         },
         {
+            "type": "autocomplete",
+            "name": "page",
+            "required": false,
+            "title": {
+                "en": "Page",
+                "nl": "Pagina"
+            },
+            "hint": {
+                "en": "Choose a page, or All for any page.",
+                "nl": "Kies een pagina, of Alle voor elke pagina."
+            },
+            "placeholder": {
+                "en": "All",
+                "nl": "Alle"
+            }
+        },
+        {
             "type": "dropdown",
             "name": "state",
             "title": {
@@ -105,8 +123,8 @@
                 "nl": "Status"
             },
             "placeholder": {
-                "en": "Clicked / Released / Short Pressed / Long Pressed",
-                "nl": "Ingedrukt / Losgelaten / Kort ingedrukt / Lang ingedrukt"
+                "en": "Clicked / Released / Long Pressed",
+                "nl": "Ingedrukt / Losgelaten / Lang ingedrukt"
             },
             "values": [
                 {

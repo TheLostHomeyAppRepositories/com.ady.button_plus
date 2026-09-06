@@ -4,13 +4,13 @@
 		"nl": "Een configuratiebutton is van status veranderd"
     },
     "titleFormatted": {
-        "en": "The [[left_right]] Button on [[display_button]] configuration [[config]] was [[state]]",
-		"nl": "De [[left_right]] knop op [[display_button]] configuratie [[config]] was [[state]]"
+                "en": "The [[left_right]] Button on [[display_button]] configuration [[config]] for [[page]] was [[state]]",
+		"nl": "De [[left_right]] knop op [[display_button]] configuratie [[config]] voor [[page]] was [[state]]"
     },
     "tokens": [
         {
             "name": "state",
-            "type": "boolean",
+            "type": "string",
             "title": {
                 "en": "State",
                 "nl": "Status"
@@ -96,6 +96,23 @@
             "min": 1,
             "max": 40,
             "step": 1
+        },
+        {
+            "type": "autocomplete",
+            "name": "page",
+            "required": false,
+            "title": {
+                "en": "Page",
+                "nl": "Pagina"
+            },
+            "hint": {
+                "en": "Choose a page, or All for any page.",
+                "nl": "Kies een pagina, of Alle voor elke pagina."
+            },
+            "placeholder": {
+                "en": "All",
+                "nl": "Alle"
+            }
         },
         {
             "type": "dropdown",

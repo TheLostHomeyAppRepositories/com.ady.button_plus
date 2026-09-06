@@ -7,7 +7,8 @@
         "en": "The [[left_right]] Button on connector [[connector]] for page [[page]] was turned on",
         "nl": "De [[left_right]] knop op [[connector]] voor pagina [[page]] is aan gezet"
     },
-    "tokens": [
+	"deprecated": true,
+	"tokens": [
         {
             "name": "left_right",
             "type": "boolean",

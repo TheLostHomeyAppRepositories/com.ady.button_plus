@@ -9,6 +9,7 @@ const { checkSEMVerGreaterOrEqual } = require('../../lib/HttpHelper');
 const { isSvgTextContent } = require('../../lib/SvgHelper');
 
 const V3_LONG_PRESS_EVENT_INTERVAL_MS = 20;
+const DIM_DOUBLE_CLICK_WINDOW_MS = 350;
 
 class PanelDevice extends Device
 {
@@ -24,6 +25,9 @@ class PanelDevice extends Device
 		this.longPressEventCounts = new Map();
 		this.lastLongPressTimes = new Map();
 		this.buttonValues = new Map();
+		this.dimDirections = new Map();
+		this.dimClickTimers = new Map();
+		this.dimToggleValues = new Map();
 		this.capabilityDispatchInFlight = new Set();
 		this.barConfigured = [false, false, false, false, false, false, false, false];
 		this.page = 1;
@@ -579,6 +583,22 @@ class PanelDevice extends Device
 		if (this.buttonValues)
 		{
 			this.buttonValues.clear();
+		}
+		if (this.dimClickTimers)
+		{
+			for (const timer of this.dimClickTimers.values())
+			{
+				this.homey.clearTimeout(timer);
+			}
+			this.dimClickTimers.clear();
+		}
+		if (this.dimDirections)
+		{
+			this.dimDirections.clear();
+		}
+		if (this.dimToggleValues)
+		{
+			this.dimToggleValues.clear();
 		}
 
 		await super.onDeleted();
@@ -1948,7 +1968,8 @@ class PanelDevice extends Device
 			this.lastLongPressTimes.delete(longPressKey);
 
 			// The button was pressed
-			this.processClickMessage(parameters);
+			this.handleButtonClick(parameters);
+			this.homey.app.triggerButtonEvent(this, parameters.side, parameters.connector, 'clicked', parameters.value.toString(), 0);
 		}
 		else if (MQTTMessage.event === 'longpress')
 		{
@@ -1961,7 +1982,150 @@ class PanelDevice extends Device
 
 			// The button has been released
 			this.processReleaseMessage(parameters);
+			this.homey.app.triggerButtonEvent(this, parameters.side, parameters.connector, 'released', parameters.value.toString(), 0);
 		}
+	}
+
+	resolveConnectorConfig(parameters)
+	{
+		// Check if a large display or if no configuration assigned to this connector
+		let config = null;
+		if ((parameters.configNo != null) && (parameters.connectorType !== 2) && (parameters.connectorType !== 3))
+		{
+			if (!parameters.page)
+			{
+				parameters.page = 0;
+			}
+			config = this.getConfigPageSide(null, parameters.page, parameters.side, parameters.configNo);
+			parameters.page = parseInt(config.page, 10);
+		}
+
+		return config;
+	}
+
+	isDimButtonConfig(config)
+	{
+		return !!config && (config.capabilityName === 'dim') && (config.deviceID !== 'none') && (config.deviceID !== 'customMQTT') && (config.deviceID !== '_variable_');
+	}
+
+	async handleButtonClick(parameters)
+	{
+		const config = this.resolveConnectorConfig(parameters);
+
+		if (this.isDimButtonConfig(config))
+		{
+			// Dim buttons only decide their click action on release, once we know for certain whether it was a long press
+			const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`) || false;
+			// convert the value to a string
+			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'clicked', value.toString(), parameters.page);
+			return null;
+		}
+
+		return this.processClickMessage(parameters);
+	}
+
+	getDimButtonKey(connector, side, page)
+	{
+		return `${connector}_${side}_${page}`;
+	}
+
+	getDimDirection(key, dimChangeStr)
+	{
+		const stored = this.dimDirections.get(key);
+		if (stored === '+' || stored === '-')
+		{
+			return stored;
+		}
+
+		return (typeof dimChangeStr === 'string' && dimChangeStr.indexOf('-') >= 0) ? '-' : '+';
+	}
+
+	formatDimLabel(percent, direction)
+	{
+		return `${Math.round(percent)}% ${direction}`;
+	}
+
+	publishDimButtonLabel(brokerId, buttonIdx, page, percent, direction)
+	{
+		this.homey.app.publishMQTTMessage(brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`, this.formatDimLabel(percent, direction)).catch(this.error);
+		this.homey.app.publishMQTTMessage(brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, '').catch(this.error);
+	}
+
+	async refreshDimButtonDisplay(parameters, config, key)
+	{
+		const { capability } = await this.getDeviceAndCapability(config);
+		const percent = capability && (typeof capability.value === 'number') ? capability.value * 100 : 0;
+		const direction = this.getDimDirection(key, config.dimChange);
+
+		const buttonIdx = parameters.connector * 2 + (parameters.side === 'left' ? 0 : 1) + 1;
+		this.publishDimButtonLabel(config.brokerId, buttonIdx, parameters.page, percent, direction);
+	}
+
+	async handleDimButtonRelease(parameters, config, key)
+	{
+		const pendingTimer = this.dimClickTimers.get(key);
+		if (pendingTimer)
+		{
+			// Second click arrived within the double click window
+			this.homey.clearTimeout(pendingTimer);
+			this.dimClickTimers.delete(key);
+			return this.toggleDimOnOff(parameters, config, key);
+		}
+
+		// Wait to see if a second click follows before treating this as a single click; by this point (release)
+		// we already know for certain this press did not turn into a long press
+		const timer = this.homey.setTimeout(() =>
+		{
+			this.dimClickTimers.delete(key);
+			this.toggleDimDirection(parameters, config, key).catch((err) => this.error(err));
+		}, DIM_DOUBLE_CLICK_WINDOW_MS);
+
+		this.dimClickTimers.set(key, timer);
+		return null;
+	}
+
+	async toggleDimDirection(parameters, config, key)
+	{
+		const currentDirection = this.getDimDirection(key, config.dimChange);
+		this.dimDirections.set(key, currentDirection === '-' ? '+' : '-');
+
+		await this.refreshDimButtonDisplay(parameters, config, key);
+	}
+
+	async toggleDimOnOff(parameters, config, key)
+	{
+		const device = await this.homey.app.getHomeyDeviceById(config.deviceID);
+		if (!device)
+		{
+			return;
+		}
+
+		const onoffCapability = await this.homey.app.getHomeyCapabilityByName(device, 'onoff');
+		if (onoffCapability)
+		{
+			await this.guardedSetCapabilityValueOnDevice(device, 'onoff', !onoffCapability.value, 'handleDimButtonClick:onoff');
+			await this.refreshDimButtonDisplay(parameters, config, key);
+			return;
+		}
+
+		const dimCapability = await this.homey.app.getHomeyCapabilityByName(device, 'dim');
+		if (!dimCapability)
+		{
+			return;
+		}
+
+		if (dimCapability.value > 0)
+		{
+			this.dimToggleValues.set(key, dimCapability.value);
+			await this.guardedSetCapabilityValueOnDevice(device, 'dim', 0, 'handleDimButtonClick:dimOff');
+		}
+		else
+		{
+			const restoreValue = this.dimToggleValues.get(key) || 1;
+			await this.guardedSetCapabilityValueOnDevice(device, 'dim', restoreValue, 'handleDimButtonClick:dimOn');
+		}
+
+		await this.refreshDimButtonDisplay(parameters, config, key);
 	}
 
 	async processClickMessage(parameters)
@@ -2034,13 +2198,15 @@ class PanelDevice extends Device
 
 						if (config.capabilityName === 'dim')
 						{
-							// For dim cpaabilities we need to adjust the value by the amount in the dimChange field and not change the button state
-							// Get the required change from the dimChange field and convert it from a percentage to a value
-							const change = parseInt(config.dimChange, 10) / 100;
+							// For dim capabilities we need to adjust the value by the amount in the dimChange field and not change the button state
+							// Get the required change magnitude from the dimChange field and convert it from a percentage to a value
+							const dimKey = this.getDimButtonKey(parameters.connector, parameters.side, parameters.page);
+							const magnitude = Math.abs(parseInt(config.dimChange, 10)) / 100;
 							if ((config.dimChange.indexOf('+') >= 0) || (config.dimChange.indexOf('-') >= 0))
 							{
-								// + or - was specified so add or subtract the change from the current value
-								value = capability.value + change;
+								// Brighten or darken from the current value using the direction toggled by a single click
+								const direction = this.getDimDirection(dimKey, config.dimChange);
+								value = direction === '-' ? capability.value - magnitude : capability.value + magnitude;
 
 								// Make sure the value is between 0 and 1
 								if (value > 1)
@@ -2055,11 +2221,15 @@ class PanelDevice extends Device
 							else
 							{
 								// No + or - was specified so just set the value to the change
-								value = change;
+								value = magnitude;
 							}
 
 							// Set the dim capability value of the target device
 							await this.guardedSetCapabilityValueOnDevice(device, config.capabilityName, value, 'processClickMessage:dim');
+
+							// Show the new dim level and direction on the button display
+							await this.refreshDimButtonDisplay(parameters, config, dimKey);
+
 							value *= 100;
 
 							if (parameters.fromButton && ((parameters.page === 0) || (this.page === parameters.page)))
@@ -2136,7 +2306,7 @@ class PanelDevice extends Device
 			}
 		}
 
-		this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'clicked', value, parameters.page);
+		this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'clicked', value.toString(), parameters.page);
 
 		if (config)
 		{
@@ -2224,17 +2394,18 @@ class PanelDevice extends Device
 
 		this.longPressOccurred.set(longPressKey, repeatCount + 1);
 		this.homey.app.triggerButtonLongPress(this, parameters.side === 'left', parameters.connector + 1, repeatCount, parameters.page);
+		this.homey.app.triggerButtonEvent(this, parameters.side, parameters.connector, 'long', parameters.value.toString(), 0);
 
 		if ((parameters.connectorType === 2) || (parameters.connectorType === 3))
 		{
 			// Display connector buttons: fire the configuration button trigger so long presses can start flows
 			const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`);
-			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value, parameters.page, repeatCount);
+			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value.toString(), parameters.page, repeatCount);
 		}
 		else if (buttonPanelConfiguration !== null)
 		{
 			const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`);
-			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value, parameters.page, repeatCount);
+			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'long', value.toString(), parameters.page, repeatCount);
 
 			const capability = parameters.side === 'left' ? buttonPageConfiguration.leftCapability : buttonPageConfiguration.rightCapability;
 
@@ -2260,7 +2431,7 @@ class PanelDevice extends Device
 		if (parameters.configNo != null)
 		{
 			const value = this.buttonValues.get(`${parameters.side}_${parameters.connector}_${parameters.page}`) || false;
-			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'released', value, parameters.page);
+			this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'released', value.toString(), parameters.page);
 		}
 
 		// Check if a large display or if no configuration assigned to this connector
@@ -2276,7 +2447,18 @@ class PanelDevice extends Device
 		}
 		else if (config)
 		{
-			if (this.longPressOccurred && (this.longPressOccurred.get(`${parameters.connector}_${parameters.side}_${parameters.page}`) > 0) && (config.capabilityName === 'windowcoverings_state'))
+			if (this.isDimButtonConfig(config))
+			{
+				const longPressKey = `${parameters.connector}_${parameters.side}_${parameters.page}`;
+				const longPressHappened = this.longPressOccurred && (this.longPressOccurred.get(longPressKey) > 0);
+				if (!longPressHappened)
+				{
+					// Only a plain click (no long press) reaches here, so it's safe to decide single vs double click now
+					const dimKey = this.getDimButtonKey(parameters.connector, parameters.side, parameters.page);
+					this.handleDimButtonRelease(parameters, config, dimKey).catch((err) => this.error(err));
+				}
+			}
+			else if (this.longPressOccurred && (this.longPressOccurred.get(`${parameters.connector}_${parameters.side}_${parameters.page}`) > 0) && (config.capabilityName === 'windowcoverings_state'))
 			{
 				// Send the pause command to the device if the LongPress was received
 				if (config.deviceID === 'customMQTT')
@@ -2754,6 +2936,13 @@ class PanelDevice extends Device
 							this.homey.app.publishMQTTMessage(config.brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, value ? config.onSVG : config.offSVG).catch((err) => this.error(err));
 						}
 					}
+					else
+					{
+						// Dim capability: show the current level and toggled brighten/darken direction on the button
+						const dimKey = this.getDimButtonKey(connector, side, page);
+						const direction = this.getDimDirection(dimKey, config.dimChange);
+						this.publishDimButtonLabel(config.brokerId, buttonIdx, page, value, direction);
+					}
 
 					// Add the front and wall colours or the on/off state to the message queue based on the on/off value and firmware version
 					this.setLEDOnOff(config, null, buttonIdx, page, value);
@@ -2934,6 +3123,7 @@ class PanelDevice extends Device
 	{
 		const mqttQueue = [];
 		let value = false;
+		let rawDimValue = null;
 
 		if ((page > 0) && !checkSEMVerGreaterOrEqual(this.firmwareVersion, '2.0.0'))
 		{
@@ -2976,6 +3166,10 @@ class PanelDevice extends Device
 				{
 					this.homey.app.registerDeviceCapabilityStateChange(device, sideConfig.capabilityName);
 					value = capability.value;
+					if (sideConfig.capabilityName === 'dim')
+					{
+						rawDimValue = value;
+					}
 					if (capability.id === 'windowcoverings_state')
 					{
 						if (value === 'up')
@@ -3024,6 +3218,30 @@ class PanelDevice extends Device
 				value: sideConfig.topLabel,
 			},
 		);
+
+		if (sideConfig.capabilityName === 'dim')
+		{
+			// Show the current dim level and toggled brighten/darken direction on the button
+			const dimKey = this.getDimButtonKey(connector, side, page);
+			const direction = this.getDimDirection(dimKey, sideConfig.dimChange);
+			mqttQueue.push(
+				{
+					brokerId: sideConfig.brokerId,
+					message: `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`,
+					value: this.formatDimLabel((rawDimValue || 0) * 100, direction),
+				}
+			);
+
+			mqttQueue.push(
+				{
+					brokerId: sideConfig.brokerId,
+					message: `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`,
+					value: '',
+				}
+			);
+
+			return mqttQueue;
+		}
 
 		// Send the value to the device after a short delay to allow the device to connect to the broker
 		mqttQueue.push(
