@@ -2063,6 +2063,12 @@ class PanelDevice extends Device
 		this.homey.app.publishMQTTMessage(brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, '').catch(this.error);
 	}
 
+	publishVariableButtonLabel(brokerId, buttonIdx, page, value)
+	{
+		const text = (value === null || value === undefined) ? '' : String(value);
+		this.publishTextOrSvg(brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`, text);
+	}
+
 	handleGenericDoubleClick(parameters, key)
 	{
 		const pendingTimer = this.clickEventTimers.get(key);
@@ -2224,6 +2230,21 @@ class PanelDevice extends Device
 					// Cant't update the variable as the app has missing scopes so a Flow card is required to do this
 					// variable.value = value;
 					// this.homey.app.setVariable(config.capabilityName, variable);
+				}
+				else if (variable)
+				{
+					// Text/number variables have no on/off state: just show their content and trigger the flows
+					const buttonIdx = parameters.connector * 2 + (parameters.side === 'left' ? 0 : 1) + 1;
+					this.publishVariableButtonLabel(config.brokerId, buttonIdx, parameters.page, variable.value);
+					this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'clicked', variable.value === undefined ? '' : String(variable.value), parameters.page);
+
+					if (parameters.fromButton && ((parameters.page === 0) || (this.page === parameters.page)))
+					{
+						// Momentary press: reset the virtual button state immediately
+						setImmediate(() => this.safeSetCapabilityValue(parameters.buttonCapability, false));
+					}
+
+					return;
 				}
 			}
 			else if (config.deviceID !== 'none')
@@ -2966,7 +2987,14 @@ class PanelDevice extends Device
 					let buttonIdx = connector * 2 + (side === 'left' ? 0 : 1);
 					buttonIdx += 1;
 
-					if (config.capabilityName !== 'dim')
+					// Text/number variables have no on/off state: just refresh what's shown on the button
+					const isNonBooleanVariable = (config.deviceID === '_variable_') && (typeof value !== 'boolean');
+
+					if (isNonBooleanVariable)
+					{
+						this.publishVariableButtonLabel(config.brokerId, buttonIdx, page, value);
+					}
+					else if (config.capabilityName !== 'dim')
 					{
 						if (config.capabilityName !== 'windowcoverings_state')
 						{
@@ -3020,7 +3048,7 @@ class PanelDevice extends Device
 						const ledState = await this.getDimButtonLedState(config);
 						this.setLEDOnOff(config, null, buttonIdx, page, ledState);
 					}
-					else
+					else if (!isNonBooleanVariable)
 					{
 						// Add the front and wall colours or the on/off state to the message queue based on the on/off value and firmware version
 						this.setLEDOnOff(config, null, buttonIdx, page, value);
@@ -3203,6 +3231,7 @@ class PanelDevice extends Device
 		const mqttQueue = [];
 		let value = false;
 		let rawDimValue = null;
+		let rawVariableValue = null;
 
 		if ((page > 0) && !checkSEMVerGreaterOrEqual(this.firmwareVersion, '2.0.0'))
 		{
@@ -3225,6 +3254,11 @@ class PanelDevice extends Device
 			if (variable && variable.type === 'boolean')
 			{
 				value = variable.value;
+			}
+			else if (variable)
+			{
+				// Text/number variables have no on/off state; show their content instead
+				rawVariableValue = variable.value;
 			}
 
 			if ((page === 0) || (this.page === page))
@@ -3322,6 +3356,30 @@ class PanelDevice extends Device
 					brokerId: sideConfig.brokerId,
 					message: `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`,
 					value: '',
+				}
+			);
+
+			return mqttQueue;
+		}
+
+		if (rawVariableValue !== null)
+		{
+			// Text/number variables have no on/off state; show their content instead (or the SVG it contains)
+			const variableText = String(rawVariableValue);
+			const variableIsSvg = isSvgTextContent(variableText);
+			mqttQueue.push(
+				{
+					brokerId: sideConfig.brokerId,
+					message: `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`,
+					value: variableIsSvg ? '' : variableText,
+				}
+			);
+
+			mqttQueue.push(
+				{
+					brokerId: sideConfig.brokerId,
+					message: `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`,
+					value: variableIsSvg ? variableText : '',
 				}
 			);
 

@@ -3052,6 +3052,16 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				}
 			};
 
+			const positionDropdown = () =>
+			{
+				// Position as a viewport-fixed overlay so it never gets clipped by, or adds scroll height to,
+				// a scrollable ancestor (e.g. a popup body) - avoids a second, redundant scrollbar there.
+				const rect = input.getBoundingClientRect();
+				dropdown.style.top = `${rect.bottom - 1}px`;
+				dropdown.style.left = `${rect.left}px`;
+				dropdown.style.width = `${rect.width}px`;
+			};
+
 			const openDropdown = () =>
 			{
 				dropdownOpen = true;
@@ -3063,6 +3073,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 				}
 				input.placeholder = 'Type to filter...';
 				dropdown.style.display = 'block';
+				positionDropdown();
 			};
 
 			const closeDropdown = () =>
@@ -3338,6 +3349,23 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					event.preventDefault();
 					closeDropdown();
 					input.blur();
+				}
+			});
+
+			// Keep the fixed-position dropdown aligned with its input if the page or a scrollable
+			// ancestor (e.g. a popup body) scrolls, or the window resizes, while it's open.
+			window.addEventListener('scroll', function ()
+			{
+				if (dropdownOpen)
+				{
+					positionDropdown();
+				}
+			}, true);
+			window.addEventListener('resize', function ()
+			{
+				if (dropdownOpen)
+				{
+					positionDropdown();
 				}
 			});
 
@@ -3885,6 +3913,16 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			return false;
 		}
 
+		function isSvgTextContent(value)
+		{
+			if (typeof value !== 'string')
+			{
+				return false;
+			}
+
+			return /<svg(?:\s|>)/i.test(value.replace(/^\uFEFF/, '').trim());
+		}
+
 		function getButtonPanelPreviewSvg(svgText)
 		{
 			if (!svgText)
@@ -4007,16 +4045,49 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			return `${percent}% ${direction}`;
 		}
 
+		function getButtonPanelVariablePreviewText(deviceValue, capabilityValue)
+		{
+			if (deviceValue !== '_variable_')
+			{
+				return null;
+			}
+
+			const selectedVariable = variablesArray.find((variable) => variable.id === capabilityValue);
+			if (!selectedVariable || (selectedVariable.type === 'boolean'))
+			{
+				return null;
+			}
+
+			return (selectedVariable.value === undefined || selectedVariable.value === null) ? '' : String(selectedVariable.value);
+		}
+
 		function getButtonPanelPreviewMarkup(pageConfig, side, pageIndex = buttonPagePopupCurrentPage)
 		{
 			const topText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'TopText', Homey.__(`settings.${side}Panel`), pageIndex));
-			const isDimCapability = (getLiveButtonPanelFieldValue(pageConfig, side, 'Capability', '', pageIndex) === 'dim');
+			const deviceValue = getLiveButtonPanelFieldValue(pageConfig, side, 'Device', '', pageIndex);
+			const capabilityValue = getLiveButtonPanelFieldValue(pageConfig, side, 'Capability', '', pageIndex);
+			const isDimCapability = (capabilityValue === 'dim');
+			const variablePreviewText = getButtonPanelVariablePreviewText(deviceValue, capabilityValue);
+			const isNonBooleanVariable = (variablePreviewText !== null);
 			const onText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'OnText', Homey.__('settings.labelOn'), pageIndex));
 			const offText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'OffText', Homey.__('settings.labelOff'), pageIndex));
-			const stateText = isDimCapability ? escapeHtml(getButtonPanelDimPreviewText(pageConfig, side, pageIndex)) : ((buttonPagePopupLedState === 'on') ? onText : offText);
-			const textFieldSuffix = isDimCapability ? 'DimChange' : ((buttonPagePopupLedState === 'on') ? 'OnText' : 'OffText');
+			const isVariableSvg = isNonBooleanVariable && isSvgTextContent(variablePreviewText);
+			let stateText;
+			if (isDimCapability)
+			{
+				stateText = escapeHtml(getButtonPanelDimPreviewText(pageConfig, side, pageIndex));
+			}
+			else if (isNonBooleanVariable && !isVariableSvg)
+			{
+				stateText = escapeHtml(variablePreviewText);
+			}
+			else
+			{
+				stateText = (buttonPagePopupLedState === 'on') ? onText : offText;
+			}
+			const textFieldSuffix = isDimCapability ? 'DimChange' : (isNonBooleanVariable ? 'Capability' : ((buttonPagePopupLedState === 'on') ? 'OnText' : 'OffText'));
 			const svgFieldSuffix = (buttonPagePopupLedState === 'on') ? 'OnSVG' : 'OffSVG';
-			const selectedSvgText = isDimCapability ? '' : getLiveButtonPanelFieldValue(pageConfig, side, svgFieldSuffix, '', pageIndex);
+			const selectedSvgText = isVariableSvg ? variablePreviewText : ((isDimCapability || isNonBooleanVariable) ? '' : getLiveButtonPanelFieldValue(pageConfig, side, svgFieldSuffix, '', pageIndex));
 			const svgMarkup = getButtonPanelPreviewSvg(selectedSvgText || '');
 			const ledMarkup = `<div class="button-sim-leds ${side === 'right' ? 'button-sim-leds-right' : ''}">${getButtonPanelLedMarkup(pageConfig, side, pageIndex)}</div>`;
 			const contentMarkup = svgMarkup
@@ -4402,13 +4473,16 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 			// Dim buttons show their level and direction on the display instead, so the On/Off text and icon fields don't apply
 			const isDimCapability = (capabilityElement.value === 'dim');
+			const selectedVariable = (deviceValue === '_variable_') ? variablesArray.find((variable) => variable.id === capabilityElement.value) : null;
+			const isNonBooleanVariable = !!selectedVariable && (selectedVariable.type !== 'boolean');
+			const hideOnOffFields = isDimCapability || isNonBooleanVariable;
 			for (const suffix of ['OnText', 'OffText', 'OnSVG', 'OffSVG'])
 			{
 				const fieldElement = popupElementsBySuffix[suffix];
 				const fieldRowElement = fieldElement ? fieldElement.closest('.button-field-popup-field') : null;
 				if (fieldRowElement)
 				{
-					fieldRowElement.style.display = isDimCapability ? 'none' : '';
+					fieldRowElement.style.display = hideOnOffFields ? 'none' : '';
 				}
 			}
 
@@ -6747,13 +6821,10 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 			for (const variable of variablesArray)
 			{
-				if (variable.type === "boolean")
-				{
-					var option = document.createElement("option");
-					option.text = variable.name;
-					option.value = variable.id;
-					capabilityElement.add(option);
-				}
+				var option = document.createElement("option");
+				option.text = (variable.type === "boolean") ? variable.name : `${variable.name} (${variable.type})`;
+				option.value = variable.id;
+				capabilityElement.add(option);
 			}
 
 			// Restore the previous variable selection
@@ -6977,26 +7048,19 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 
 		function capabilityChanged(side, page, value)
 		{
-			if (value === "dim")
-			{
-				// For dim type capabilities we want to show the dim change value
-				document.getElementById(`${side}${page}DimChangeDiv`).style.display = itemDisplyType;
+			const deviceElement = document.getElementById(`${side}${page}Device`);
+			const isVariableDevice = !!deviceElement && (deviceElement.value === '_variable_');
+			const selectedVariable = isVariableDevice ? variablesArray.find((variable) => variable.id === value) : null;
+			const isNonBooleanVariable = !!selectedVariable && (selectedVariable.type !== 'boolean');
+			const hideOnOffFields = (value === "dim") || isNonBooleanVariable;
 
-				// And we don't want to show the On or Off text
-				document.getElementById(`${side}${page}OnTextDiv`).style.display = "none";
-				document.getElementById(`${side}${page}OffText`).style.display = "none";
-				document.getElementById(`${side}${page}OffTextLabel`).style.display = "none";
-			}
-			else
-			{
-				// For Boolean types we don't want to show Dim Change value
-				document.getElementById(`${side}${page}DimChangeDiv`).style.display = "none";
+			// Only dim capabilities show the dim change value
+			document.getElementById(`${side}${page}DimChangeDiv`).style.display = (value === "dim") ? itemDisplyType : "none";
 
-				// And we want to show the On and Off text
-				document.getElementById(`${side}${page}OnTextDiv`).style.display = itemDisplyType;
-				document.getElementById(`${side}${page}OffText`).style.display = itemDisplyType;
-				document.getElementById(`${side}${page}OffTextLabel`).style.display = itemDisplyType;
-			}
+			// Dim capabilities and non-boolean variables have no on/off state, so hide the On/Off text
+			document.getElementById(`${side}${page}OnTextDiv`).style.display = hideOnOffFields ? "none" : itemDisplyType;
+			document.getElementById(`${side}${page}OffText`).style.display = hideOnOffFields ? "none" : itemDisplyType;
+			document.getElementById(`${side}${page}OffTextLabel`).style.display = hideOnOffFields ? "none" : itemDisplyType;
 			//document.getElementById(`${side}TopText`).value = document.getElementById(`${side}TopText`).value ? document.getElementById(`${side}TopText`).value : value;
 			hidePopupManagedFieldsForSection(side, page);
 
