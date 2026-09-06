@@ -4061,6 +4061,37 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			return (selectedVariable.value === undefined || selectedVariable.value === null) ? '' : String(selectedVariable.value);
 		}
 
+		function getButtonPanelCapabilityPreviewText(side, pageIndex, deviceValue, capabilityValue)
+		{
+			if ((deviceValue === '_variable_') || (capabilityValue === 'dim') || (capabilityValue === 'windowcoverings_state') || !capabilityValue)
+			{
+				return null;
+			}
+
+			const capabilityElement = document.getElementById(`${side}${pageIndex}Capability`);
+			const selectedOption = capabilityElement && capabilityElement.selectedOptions ? capabilityElement.selectedOptions[0] : null;
+			if (!selectedOption || !selectedOption.dataset.type || (selectedOption.dataset.type === 'boolean'))
+			{
+				return null;
+			}
+
+			if (selectedOption.dataset.type === 'enum')
+			{
+				try
+				{
+					const values = JSON.parse(selectedOption.dataset.values || '[]');
+					const match = values.find((entry) => entry.id === selectedOption.dataset.value);
+					return match ? (match.title || match.id) : (selectedOption.dataset.value || '');
+				}
+				catch (err)
+				{
+					return selectedOption.dataset.value || '';
+				}
+			}
+
+			return selectedOption.dataset.value || '';
+		}
+
 		function getButtonPanelPreviewMarkup(pageConfig, side, pageIndex = buttonPagePopupCurrentPage)
 		{
 			const topText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'TopText', Homey.__(`settings.${side}Panel`), pageIndex));
@@ -4068,10 +4099,12 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			const capabilityValue = getLiveButtonPanelFieldValue(pageConfig, side, 'Capability', '', pageIndex);
 			const isDimCapability = (capabilityValue === 'dim');
 			const variablePreviewText = getButtonPanelVariablePreviewText(deviceValue, capabilityValue);
-			const isNonBooleanVariable = (variablePreviewText !== null);
+			const capabilityPreviewText = (variablePreviewText === null) ? getButtonPanelCapabilityPreviewText(side, pageIndex, deviceValue, capabilityValue) : null;
+			const nonBooleanPreviewText = (variablePreviewText !== null) ? variablePreviewText : capabilityPreviewText;
+			const isNonBooleanVariable = (nonBooleanPreviewText !== null);
 			const onText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'OnText', Homey.__('settings.labelOn'), pageIndex));
 			const offText = escapeHtml(getLiveButtonPanelFieldValue(pageConfig, side, 'OffText', Homey.__('settings.labelOff'), pageIndex));
-			const isVariableSvg = isNonBooleanVariable && isSvgTextContent(variablePreviewText);
+			const isVariableSvg = isNonBooleanVariable && isSvgTextContent(nonBooleanPreviewText);
 			let stateText;
 			if (isDimCapability)
 			{
@@ -4079,7 +4112,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			}
 			else if (isNonBooleanVariable && !isVariableSvg)
 			{
-				stateText = escapeHtml(variablePreviewText);
+				stateText = escapeHtml(nonBooleanPreviewText);
 			}
 			else
 			{
@@ -4087,7 +4120,7 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			}
 			const textFieldSuffix = isDimCapability ? 'DimChange' : (isNonBooleanVariable ? 'Capability' : ((buttonPagePopupLedState === 'on') ? 'OnText' : 'OffText'));
 			const svgFieldSuffix = (buttonPagePopupLedState === 'on') ? 'OnSVG' : 'OffSVG';
-			const selectedSvgText = isVariableSvg ? variablePreviewText : ((isDimCapability || isNonBooleanVariable) ? '' : getLiveButtonPanelFieldValue(pageConfig, side, svgFieldSuffix, '', pageIndex));
+			const selectedSvgText = isVariableSvg ? nonBooleanPreviewText : ((isDimCapability || isNonBooleanVariable) ? '' : getLiveButtonPanelFieldValue(pageConfig, side, svgFieldSuffix, '', pageIndex));
 			const svgMarkup = getButtonPanelPreviewSvg(selectedSvgText || '');
 			const ledMarkup = `<div class="button-sim-leds ${side === 'right' ? 'button-sim-leds-right' : ''}">${getButtonPanelLedMarkup(pageConfig, side, pageIndex)}</div>`;
 			const contentMarkup = svgMarkup
@@ -4475,7 +4508,10 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			const isDimCapability = (capabilityElement.value === 'dim');
 			const selectedVariable = (deviceValue === '_variable_') ? variablesArray.find((variable) => variable.id === capabilityElement.value) : null;
 			const isNonBooleanVariable = !!selectedVariable && (selectedVariable.type !== 'boolean');
-			const hideOnOffFields = isDimCapability || isNonBooleanVariable;
+			const selectedCapabilityOption = capabilityElement.selectedOptions ? capabilityElement.selectedOptions[0] : null;
+			const selectedCapabilityType = selectedCapabilityOption ? selectedCapabilityOption.dataset.type : '';
+			const isNonBooleanDeviceCapability = (deviceValue !== '_variable_') && !isDimCapability && (capabilityElement.value !== 'windowcoverings_state') && (selectedCapabilityType !== '') && (selectedCapabilityType !== 'boolean');
+			const hideOnOffFields = isDimCapability || isNonBooleanVariable || isNonBooleanDeviceCapability;
 			for (const suffix of ['OnText', 'OffText', 'OnSVG', 'OffSVG'])
 			{
 				const fieldElement = popupElementsBySuffix[suffix];
@@ -7001,15 +7037,15 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 					for (const capability of capabilitiesArray)
 					{
 						const capabilityId = String(capability.id || "");
-						const isSupportedType = (capability.type === "boolean" || capabilityId === "dim" || capabilityId === "windowcoverings_state");
 						const isBlockedButtonPlusCapability = isPanelButtonCapability(capabilityId) || blockedButtonPlusCapabilities.has(capabilityId);
 						const isAllowedForButtonPlus = !isButtonPlusDevice || capabilityId === 'dim';
 
-						if (isSupportedType && !isBlockedButtonPlusCapability && isAllowedForButtonPlus && !addedCapabilityIds.has(capabilityId))
+						if (isAllowedForButtonPlus && !isBlockedButtonPlusCapability && !addedCapabilityIds.has(capabilityId))
 						{
 							var option = document.createElement("option");
 							option.text = `${capability.title} (${capabilityId})`;
 							option.value = capabilityId;
+							option.dataset.type = capability.type || '';
 							const capabilityIconUrl = getCapabilityIconUrl(capability);
 							if (capabilityIconUrl)
 							{
@@ -7019,6 +7055,17 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 							{
 								// Let the button simulator preview the current dim level
 								option.dataset.value = String(capability.value);
+							}
+							else if ((capability.type === 'enum') && Array.isArray(capability.values))
+							{
+								// Let the button simulator preview the picker's current option and cycle order
+								option.dataset.values = JSON.stringify(capability.values);
+								option.dataset.value = (capability.value === undefined || capability.value === null) ? '' : String(capability.value);
+							}
+							else if ((capability.type !== 'boolean') && (capabilityId !== 'windowcoverings_state'))
+							{
+								// Let the button simulator preview a text/number capability's current content
+								option.dataset.value = (capability.value === undefined || capability.value === null) ? '' : String(capability.value);
 							}
 							capabilityElement.add(option);
 							addedCapabilityIds.add(capabilityId);
@@ -7052,12 +7099,16 @@ displayPagePopupStatusBarPosition = Math.max(0, Math.min(parsedStatusBarPosition
 			const isVariableDevice = !!deviceElement && (deviceElement.value === '_variable_');
 			const selectedVariable = isVariableDevice ? variablesArray.find((variable) => variable.id === value) : null;
 			const isNonBooleanVariable = !!selectedVariable && (selectedVariable.type !== 'boolean');
-			const hideOnOffFields = (value === "dim") || isNonBooleanVariable;
+			const capabilityElement = document.getElementById(`${side}${page}Capability`);
+			const selectedOption = capabilityElement && capabilityElement.selectedOptions ? capabilityElement.selectedOptions[0] : null;
+			const selectedCapabilityType = selectedOption ? selectedOption.dataset.type : '';
+			const isNonBooleanDeviceCapability = !isVariableDevice && (value !== 'dim') && (value !== 'windowcoverings_state') && (selectedCapabilityType !== '') && (selectedCapabilityType !== 'boolean');
+			const hideOnOffFields = (value === "dim") || isNonBooleanVariable || isNonBooleanDeviceCapability;
 
 			// Only dim capabilities show the dim change value
 			document.getElementById(`${side}${page}DimChangeDiv`).style.display = (value === "dim") ? itemDisplyType : "none";
 
-			// Dim capabilities and non-boolean variables have no on/off state, so hide the On/Off text
+			// Dim capabilities, non-boolean variables and text/picker device capabilities have no on/off state, so hide the On/Off text
 			document.getElementById(`${side}${page}OnTextDiv`).style.display = hideOnOffFields ? "none" : itemDisplyType;
 			document.getElementById(`${side}${page}OffText`).style.display = hideOnOffFields ? "none" : itemDisplyType;
 			document.getElementById(`${side}${page}OffTextLabel`).style.display = hideOnOffFields ? "none" : itemDisplyType;

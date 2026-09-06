@@ -10,6 +10,7 @@ const { isSvgTextContent } = require('../../lib/SvgHelper');
 
 const V3_LONG_PRESS_EVENT_INTERVAL_MS = 20;
 const DOUBLE_CLICK_WINDOW_MS = 350;
+const DEFAULT_LONG_PRESS_DELAY_MS = 750;
 
 class PanelDevice extends Device
 {
@@ -29,6 +30,8 @@ class PanelDevice extends Device
 		this.dimClickTimers = new Map();
 		this.dimToggleValues = new Map();
 		this.clickEventTimers = new Map();
+		this.pickerPendingValues = new Map();
+		this.pickerCommitTimers = new Map();
 		this.capabilityDispatchInFlight = new Set();
 		this.barConfigured = [false, false, false, false, false, false, false, false];
 		this.page = 1;
@@ -608,6 +611,18 @@ class PanelDevice extends Device
 				this.homey.clearTimeout(timer);
 			}
 			this.clickEventTimers.clear();
+		}
+		if (this.pickerCommitTimers)
+		{
+			for (const timer of this.pickerCommitTimers.values())
+			{
+				this.homey.clearTimeout(timer);
+			}
+			this.pickerCommitTimers.clear();
+		}
+		if (this.pickerPendingValues)
+		{
+			this.pickerPendingValues.clear();
 		}
 
 		await super.onDeleted();
@@ -2020,6 +2035,57 @@ class PanelDevice extends Device
 		return !!config && (config.capabilityName === 'dim') && (config.deviceID !== 'none') && (config.deviceID !== 'customMQTT') && (config.deviceID !== '_variable_');
 	}
 
+	getConfiguredLongPressDelayMs(parameters)
+	{
+		if ((parameters.configNo == null) || (parameters.connectorType === 2) || (parameters.connectorType === 3))
+		{
+			return DEFAULT_LONG_PRESS_DELAY_MS;
+		}
+
+		const buttonPanelConfiguration = this.homey.app.buttonConfigurations[parameters.configNo];
+		const buttonPageConfiguration = buttonPanelConfiguration ? (buttonPanelConfiguration[parameters.page] || buttonPanelConfiguration[0] || {}) : {};
+		const configuredDelay = parseInt(buttonPageConfiguration[`${parameters.side}LongDelayMs`], 10);
+
+		return Number.isNaN(configuredDelay) ? DEFAULT_LONG_PRESS_DELAY_MS : Math.max(0, Math.min(configuredDelay, 10000));
+	}
+
+	async getCapabilityDisplayKind(config)
+	{
+		if (config.deviceID === '_variable_')
+		{
+			const variable = await this.homey.app.getVariable(config.capabilityName);
+			if (!variable)
+			{
+				return 'unknown';
+			}
+
+			return (variable.type === 'boolean') ? 'boolean' : 'text';
+		}
+
+		if ((config.capabilityName === 'dim') || (config.capabilityName === 'windowcoverings_state'))
+		{
+			return config.capabilityName;
+		}
+
+		const { capability } = await this.getDeviceAndCapability(config);
+		if (!capability)
+		{
+			return 'unknown';
+		}
+
+		if (capability.type === 'boolean')
+		{
+			return 'boolean';
+		}
+
+		if ((capability.type === 'enum') && (capability.setable !== false) && Array.isArray(capability.values) && (capability.values.length > 0))
+		{
+			return 'picker';
+		}
+
+		return 'text';
+	}
+
 	async handleButtonClick(parameters)
 	{
 		const config = this.resolveConnectorConfig(parameters);
@@ -2033,12 +2099,129 @@ class PanelDevice extends Device
 			return null;
 		}
 
+		if (config && (config.deviceID !== 'none') && (config.deviceID !== 'customMQTT'))
+		{
+			const kind = await this.getCapabilityDisplayKind(config);
+			if (kind === 'picker')
+			{
+				// Picker buttons only decide their click action on release, once we know for certain whether
+				// this was a single click (cycle the option) or a double click (toggle onoff instead);
+				// handlePickerButtonClick fires the 'clicked' flow trigger itself once the cycle is confirmed
+				return null;
+			}
+
+			if (kind === 'text')
+			{
+				return this.handleTextButtonClick(parameters, config);
+			}
+		}
+
 		return this.processClickMessage(parameters);
+	}
+
+	async handleTextButtonClick(parameters, config)
+	{
+		const { capability } = await this.getDeviceAndCapability(config);
+		const value = capability ? capability.value : '';
+		const buttonIdx = parameters.connector * 2 + (parameters.side === 'left' ? 0 : 1) + 1;
+		this.publishTextButtonLabel(config.brokerId, buttonIdx, parameters.page, value);
+		this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'clicked', (value === null || value === undefined) ? '' : String(value), parameters.page);
+
+		const ledState = await this.getCapabilityLedState(config);
+		if (ledState !== null)
+		{
+			this.setLEDOnOff(config, null, buttonIdx, parameters.page, ledState);
+		}
+
+		if (parameters.fromButton && ((parameters.page === 0) || (this.page === parameters.page)))
+		{
+			// Momentary press: reset the virtual button state immediately
+			setImmediate(() => this.safeSetCapabilityValue(parameters.buttonCapability, false));
+		}
+	}
+
+	cycleNextPickerOption(capability, currentValue)
+	{
+		const values = Array.isArray(capability.values) ? capability.values : [];
+		if (values.length === 0)
+		{
+			return null;
+		}
+
+		const currentIndex = values.findIndex((entry) => entry.id === currentValue);
+		const nextIndex = (currentIndex >= 0) ? ((currentIndex + 1) % values.length) : 0;
+		return values[nextIndex];
+	}
+
+	async handlePickerButtonClick(parameters, config)
+	{
+		const { device, capability } = await this.getDeviceAndCapability(config);
+		if (!device || !capability)
+		{
+			return;
+		}
+
+		const key = this.getButtonStateKey(parameters.connector, parameters.side, parameters.page);
+		const pendingValue = this.pickerPendingValues.get(key);
+		const currentValue = (pendingValue !== undefined) ? pendingValue : capability.value;
+		const nextOption = this.cycleNextPickerOption(capability, currentValue);
+		if (!nextOption)
+		{
+			return;
+		}
+
+		this.pickerPendingValues.set(key, nextOption.id);
+
+		// Display the newly selected option straight away, so cycling feels instant
+		const buttonIdx = parameters.connector * 2 + (parameters.side === 'left' ? 0 : 1) + 1;
+		this.publishTextButtonLabel(config.brokerId, buttonIdx, parameters.page, nextOption.title || nextOption.id);
+		this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'clicked', nextOption.id, parameters.page);
+
+		const ledState = await this.getCapabilityLedState(config);
+		if (ledState !== null)
+		{
+			this.setLEDOnOff(config, null, buttonIdx, parameters.page, ledState);
+		}
+
+		// Defer the actual capability write until the long press delay has passed without another click,
+		// so rapidly cycling through options doesn't flood the device with state changes
+		const pendingTimer = this.pickerCommitTimers.get(key);
+		if (pendingTimer)
+		{
+			this.homey.clearTimeout(pendingTimer);
+		}
+
+		const commitDelayMs = this.getConfiguredLongPressDelayMs(parameters);
+		const timer = this.homey.setTimeout(() =>
+		{
+			this.pickerCommitTimers.delete(key);
+			const valueToCommit = this.pickerPendingValues.get(key);
+			this.pickerPendingValues.delete(key);
+			if (valueToCommit === undefined)
+			{
+				return;
+			}
+
+			this.guardedSetCapabilityValueOnDevice(device, config.capabilityName, valueToCommit, 'handlePickerButtonClick:commit').catch((err) => this.error(err));
+		}, commitDelayMs);
+
+		this.pickerCommitTimers.set(key, timer);
+
+		if (parameters.fromButton && ((parameters.page === 0) || (this.page === parameters.page)))
+		{
+			// Set the button state back to false immediately
+			setImmediate(() => this.safeSetCapabilityValue(parameters.buttonCapability, false));
+		}
+	}
+
+	getButtonStateKey(connector, side, page)
+	{
+		return `${connector}_${side}_${page}`;
 	}
 
 	getDimButtonKey(connector, side, page)
 	{
-		return `${connector}_${side}_${page}`;
+		return this.getButtonStateKey(connector, side, page);
 	}
 
 	getDimDirection(key, dimChangeStr)
@@ -2063,13 +2246,13 @@ class PanelDevice extends Device
 		this.homey.app.publishMQTTMessage(brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, '').catch(this.error);
 	}
 
-	publishVariableButtonLabel(brokerId, buttonIdx, page, value)
+	publishTextButtonLabel(brokerId, buttonIdx, page, value)
 	{
 		const text = (value === null || value === undefined) ? '' : String(value);
 		this.publishTextOrSvg(brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`, text);
 	}
 
-	handleGenericDoubleClick(parameters, key)
+	async handleGenericDoubleClick(parameters, key, config)
 	{
 		const pendingTimer = this.clickEventTimers.get(key);
 		if (pendingTimer)
@@ -2084,6 +2267,8 @@ class PanelDevice extends Device
 			{
 				this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'double', value.toString(), parameters.page);
 			}
+
+			await this.toggleOnOffForNonBooleanCapability(config);
 			return;
 		}
 
@@ -2091,9 +2276,55 @@ class PanelDevice extends Device
 		const timer = this.homey.setTimeout(() =>
 		{
 			this.clickEventTimers.delete(key);
+			this.handleConfirmedSingleClick(parameters, config).catch((err) => this.error(err));
 		}, DOUBLE_CLICK_WINDOW_MS);
 
 		this.clickEventTimers.set(key, timer);
+	}
+
+	async handleConfirmedSingleClick(parameters, config)
+	{
+		// Picker buttons defer their actual cycle to here, once we know for certain this wasn't a double click
+		if (!config)
+		{
+			return;
+		}
+
+		const kind = await this.getCapabilityDisplayKind(config);
+		if (kind === 'picker')
+		{
+			await this.handlePickerButtonClick(parameters, config);
+		}
+	}
+
+	async toggleOnOffForNonBooleanCapability(config)
+	{
+		if (!config || (config.deviceID === 'none') || (config.deviceID === 'customMQTT') || (config.deviceID === '_variable_'))
+		{
+			return;
+		}
+
+		// Text/picker capabilities have no on/off state of their own; if the target device also exposes
+		// onoff, use a double click to toggle it (same as dim buttons already do)
+		const kind = await this.getCapabilityDisplayKind(config);
+		if ((kind !== 'text') && (kind !== 'picker'))
+		{
+			return;
+		}
+
+		const device = await this.homey.app.getHomeyDeviceById(config.deviceID);
+		if (!device)
+		{
+			return;
+		}
+
+		const onoffCapability = await this.homey.app.getHomeyCapabilityByName(device, 'onoff');
+		if (!onoffCapability)
+		{
+			return;
+		}
+
+		await this.guardedSetCapabilityValueOnDevice(device, 'onoff', !onoffCapability.value, 'handleGenericDoubleClick:onoff');
 	}
 
 	async getDimButtonLedState(config)
@@ -2110,6 +2341,20 @@ class PanelDevice extends Device
 
 		const dimCapability = device ? await this.homey.app.getHomeyCapabilityByName(device, 'dim') : null;
 		return !!(dimCapability && dimCapability.value > 0);
+	}
+
+	async getCapabilityLedState(config)
+	{
+		// Non-boolean capabilities (text/picker) have no on/off value of their own, so if the target device
+		// also exposes an onoff capability, use that to drive the LED instead; otherwise leave the LED alone
+		const device = await this.homey.app.getHomeyDeviceById(config.deviceID);
+		if (!device)
+		{
+			return null;
+		}
+
+		const onoffCapability = await this.homey.app.getHomeyCapabilityByName(device, 'onoff');
+		return onoffCapability ? Boolean(onoffCapability.value) : null;
 	}
 
 	async refreshDimButtonDisplay(parameters, config, key)
@@ -2235,7 +2480,7 @@ class PanelDevice extends Device
 				{
 					// Text/number variables have no on/off state: just show their content and trigger the flows
 					const buttonIdx = parameters.connector * 2 + (parameters.side === 'left' ? 0 : 1) + 1;
-					this.publishVariableButtonLabel(config.brokerId, buttonIdx, parameters.page, variable.value);
+					this.publishTextButtonLabel(config.brokerId, buttonIdx, parameters.page, variable.value);
 					this.homey.app.triggerConfigButton(this, parameters.side, parameters.connectorType, parameters.configNo, 'clicked', variable.value === undefined ? '' : String(variable.value), parameters.page);
 
 					if (parameters.fromButton && ((parameters.page === 0) || (this.page === parameters.page)))
@@ -2337,6 +2582,16 @@ class PanelDevice extends Device
 								// Set the new state to down
 								await this.guardedSetCapabilityValueOnDevice(device, config.capabilityName, 'down', 'processClickMessage:windowcoverings_state');
 							}
+						}
+						else if ((capability.type === 'enum') && (capability.setable !== false) && Array.isArray(capability.values) && (capability.values.length > 0))
+						{
+							// Picker capabilities have no on/off state: cycling and display are handled uniformly
+							return this.handlePickerButtonClick(parameters, config);
+						}
+						else if (capability.type !== 'boolean')
+						{
+							// Text/number capabilities have no on/off state: just show their content and trigger the flows
+							return this.handleTextButtonClick(parameters, config);
 						}
 						else
 						{
@@ -2506,14 +2761,14 @@ class PanelDevice extends Device
 
 		this.homey.app.triggerButtonRelease(this, parameters.side === 'left', parameters.connector + 1, parameters.page);
 
+		const config = this.getConfigPageSide(null, parameters.page, parameters.side, parameters.configNo);
+
 		const releaseKey = `${parameters.connector}_${parameters.side}_${parameters.page}`;
 		if (!(this.longPressOccurred && (this.longPressOccurred.get(releaseKey) > 0)))
 		{
 			// Only a plain click (no long press) can be part of a double click
-			this.handleGenericDoubleClick(parameters, releaseKey);
+			this.handleGenericDoubleClick(parameters, releaseKey, config).catch((err) => this.error(err));
 		}
-
-		const config = this.getConfigPageSide(null, parameters.page, parameters.side, parameters.configNo);
 
 		if (parameters.configNo != null)
 		{
@@ -2982,19 +3237,42 @@ class PanelDevice extends Device
 				const isConfiguredCapabilityMatch = (config.deviceID === deviceId) && (config.capabilityName === capability);
 				// Dim buttons have no on/off value of their own, so also react to the target device's onoff changes to drive the LED
 				const isDimOnOffFollow = (config.deviceID === deviceId) && (config.capabilityName === 'dim') && (capability === 'onoff');
-				if (isConfiguredCapabilityMatch || isDimOnOffFollow)
+
+				// Other non-boolean capabilities have no on/off value of their own either; if the target device also
+				// exposes an onoff capability, react to its changes too so the LED can follow it
+				let isNonBooleanOnOffFollow = false;
+				if (!isConfiguredCapabilityMatch && !isDimOnOffFollow && (capability === 'onoff') && (config.deviceID === deviceId)
+					&& (config.deviceID !== '_variable_') && (config.capabilityName !== 'dim') && (config.capabilityName !== 'windowcoverings_state') && (config.capabilityName !== 'onoff') && config.capabilityName)
+				{
+					// eslint-disable-next-line no-await-in-loop
+					const { capability: configuredCapability } = await this.getDeviceAndCapability(config);
+					isNonBooleanOnOffFollow = !!configuredCapability && (configuredCapability.type !== 'boolean');
+				}
+
+				if (isConfiguredCapabilityMatch || isDimOnOffFollow || isNonBooleanOnOffFollow)
 				{
 					let buttonIdx = connector * 2 + (side === 'left' ? 0 : 1);
 					buttonIdx += 1;
 
-					// Text/number variables have no on/off state: just refresh what's shown on the button
-					const isNonBooleanVariable = (config.deviceID === '_variable_') && (typeof value !== 'boolean');
+					// An onoff-follow match is only for driving the LED; the capability that changed isn't the one configured on this button
+					const isOnOffFollowOnly = isDimOnOffFollow || isNonBooleanOnOffFollow;
+
+					// Text/number variables and non-boolean device capabilities (text/picker) have no on/off state: just refresh what's shown on the button
+					const isNonBooleanVariable = !isOnOffFollowOnly && (config.deviceID === '_variable_') && (typeof value !== 'boolean');
+					const isNonBooleanDeviceCapability = !isOnOffFollowOnly && (config.deviceID !== '_variable_') && (config.capabilityName !== 'dim') && (config.capabilityName !== 'windowcoverings_state') && (typeof value !== 'boolean');
+					const skipOnOffHandling = isNonBooleanVariable || isNonBooleanDeviceCapability;
 
 					if (isNonBooleanVariable)
 					{
-						this.publishVariableButtonLabel(config.brokerId, buttonIdx, page, value);
+						this.publishTextButtonLabel(config.brokerId, buttonIdx, page, value);
 					}
-					else if (config.capabilityName !== 'dim')
+					else if (isNonBooleanDeviceCapability)
+					{
+						// eslint-disable-next-line no-await-in-loop
+						const displayText = await this.resolveCapabilityDisplayText(config, value);
+						this.publishTextButtonLabel(config.brokerId, buttonIdx, page, displayText);
+					}
+					else if (!isOnOffFollowOnly && (config.capabilityName !== 'dim'))
 					{
 						if (config.capabilityName !== 'windowcoverings_state')
 						{
@@ -3020,20 +3298,14 @@ class PanelDevice extends Device
 						{
 							value = value === 'up';
 						}
-						if (typeof value === 'string')
+
+						if (config.onMessage !== '' || config.offMessage !== '')
 						{
-							this.publishTextOrSvg(config.brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`, value);
+							this.homey.app.publishMQTTMessage(config.brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`, value ? config.onMessage : config.offMessage).catch(this.error);
 						}
-						else
-						{
-							if (config.onMessage !== '' || config.offMessage !== '')
-							{
-								this.homey.app.publishMQTTMessage(config.brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`, value ? config.onMessage : config.offMessage).catch(this.error);
-							}
-							this.homey.app.publishMQTTMessage(config.brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, value ? config.onSVG : config.offSVG).catch((err) => this.error(err));
-						}
+						this.homey.app.publishMQTTMessage(config.brokerId, `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`, value ? config.onSVG : config.offSVG).catch((err) => this.error(err));
 					}
-					else if (capability === 'dim')
+					else if (!isOnOffFollowOnly && (capability === 'dim'))
 					{
 						// Dim capability: show the current level and toggled brighten/darken direction on the button
 						const dimKey = this.getDimButtonKey(connector, side, page);
@@ -3048,7 +3320,16 @@ class PanelDevice extends Device
 						const ledState = await this.getDimButtonLedState(config);
 						this.setLEDOnOff(config, null, buttonIdx, page, ledState);
 					}
-					else if (!isNonBooleanVariable)
+					else if (isNonBooleanDeviceCapability || isNonBooleanOnOffFollow)
+					{
+						// eslint-disable-next-line no-await-in-loop
+						const ledState = await this.getCapabilityLedState(config);
+						if (ledState !== null)
+						{
+							this.setLEDOnOff(config, null, buttonIdx, page, ledState);
+						}
+					}
+					else if (!skipOnOffHandling)
 					{
 						// Add the front and wall colours or the on/off state to the message queue based on the on/off value and firmware version
 						this.setLEDOnOff(config, null, buttonIdx, page, value);
@@ -3059,6 +3340,22 @@ class PanelDevice extends Device
 			}
 		}
 	}
+
+	async resolveCapabilityDisplayText(config, rawValue)
+	{
+		const { capability } = await this.getDeviceAndCapability(config);
+		if (capability && (capability.type === 'enum') && Array.isArray(capability.values))
+		{
+			const match = capability.values.find((entry) => entry.id === rawValue);
+			if (match)
+			{
+				return match.title || match.id;
+			}
+		}
+
+		return (rawValue === null || rawValue === undefined) ? '' : String(rawValue);
+	}
+
 
 	async checkStateChangeForDisplay(configNo, deviceId, capability, value)
 	{
@@ -3231,7 +3528,7 @@ class PanelDevice extends Device
 		const mqttQueue = [];
 		let value = false;
 		let rawDimValue = null;
-		let rawVariableValue = null;
+		let rawTextValue = null;
 
 		if ((page > 0) && !checkSEMVerGreaterOrEqual(this.firmwareVersion, '2.0.0'))
 		{
@@ -3258,7 +3555,7 @@ class PanelDevice extends Device
 			else if (variable)
 			{
 				// Text/number variables have no on/off state; show their content instead
-				rawVariableValue = variable.value;
+				rawTextValue = variable.value;
 			}
 
 			if ((page === 0) || (this.page === page))
@@ -3278,9 +3575,10 @@ class PanelDevice extends Device
 				if (capability)
 				{
 					this.homey.app.registerDeviceCapabilityStateChange(device, sideConfig.capabilityName);
-					if (sideConfig.capabilityName === 'dim')
+					const isNonBooleanCapability = (capability.type !== 'boolean') && (capability.id !== 'windowcoverings_state') && (sideConfig.capabilityName !== 'dim');
+					if ((sideConfig.capabilityName === 'dim') || isNonBooleanCapability)
 					{
-						// Dim buttons have no on/off value of their own, so also listen for onoff changes to drive the LED
+						// Non-boolean capabilities have no on/off value of their own, so also listen for onoff changes to drive the LED
 						this.homey.app.registerDeviceCapabilityStateChange(device, 'onoff');
 					}
 					value = capability.value;
@@ -3288,6 +3586,30 @@ class PanelDevice extends Device
 					{
 						rawDimValue = value;
 					}
+					else if (isNonBooleanCapability)
+					{
+						// Text/picker capabilities have no on/off state; show their content (or the picker's active option title) instead
+						if ((capability.type === 'enum') && Array.isArray(capability.values))
+						{
+							const matchedOption = capability.values.find((entry) => entry.id === value);
+							rawTextValue = matchedOption ? (matchedOption.title || matchedOption.id) : value;
+						}
+						else
+						{
+							rawTextValue = value;
+						}
+					}
+
+					if (isNonBooleanCapability)
+					{
+						// eslint-disable-next-line no-await-in-loop
+						const capabilityLedState = await this.getCapabilityLedState(sideConfig);
+						if (capabilityLedState !== null)
+						{
+							value = capabilityLedState;
+						}
+					}
+
 					if (capability.id === 'windowcoverings_state')
 					{
 						if (value === 'up')
@@ -3362,16 +3684,16 @@ class PanelDevice extends Device
 			return mqttQueue;
 		}
 
-		if (rawVariableValue !== null)
+		if (rawTextValue !== null)
 		{
-			// Text/number variables have no on/off state; show their content instead (or the SVG it contains)
-			const variableText = String(rawVariableValue);
-			const variableIsSvg = isSvgTextContent(variableText);
+			// Text/number variables and text/picker device capabilities have no on/off state; show their content instead (or the SVG it contains)
+			const displayText = String(rawTextValue);
+			const displayIsSvg = isSvgTextContent(displayText);
 			mqttQueue.push(
 				{
 					brokerId: sideConfig.brokerId,
 					message: `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/label/set`,
-					value: variableIsSvg ? '' : variableText,
+					value: displayIsSvg ? '' : displayText,
 				}
 			);
 
@@ -3379,7 +3701,7 @@ class PanelDevice extends Device
 				{
 					brokerId: sideConfig.brokerId,
 					message: `buttonplus/${this.buttonId}/button/${buttonIdx}-${page}/svg/set`,
-					value: variableIsSvg ? variableText : '',
+					value: displayIsSvg ? displayText : '',
 				}
 			);
 
